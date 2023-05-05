@@ -9,8 +9,9 @@
 (in-package :battlesnake-poc)
 
 ;;; Battlesnake logic
-(defun think ()
+(defun think (data)
   "Battlesnake main logic function -- just moves randomly for now"
+  (declare (ignore data))
   (ecase (random 4)
     (0 "up")
     (1 "down")
@@ -29,14 +30,17 @@
    '(("apiversion" . "1"))))
 
 (defun create-move-response ()
-  (cl-json:encode-json-alist-to-string
-   (list
-    (cons "move" (think)))))
+  (let*
+      ((json-string (hunchentoot:raw-post-data :force-text t))
+       (json (cl-json:decode-json-from-string json-string)))
+    (cl-json:encode-json-alist-to-string
+     (list
+      (cons "move" (think json))))))
 
 (defparameter *handlers*
   (list
-   (cons '(:get "/") #'create-root-response)
-   (cons '(:post "/move") #'create-move-response)))
+   (cons '(:get "/") 'create-root-response)
+   (cons '(:post "/move") 'create-move-response)))
 
 (defmethod hunchentoot:acceptor-dispatch-request ((srv server) (request hunchentoot:request))
   (let* ((method (hunchentoot:request-method request))
