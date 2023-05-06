@@ -8,15 +8,73 @@
 
 (in-package :battlesnake-poc)
 
-;;; Battlesnake logic
+;;; Utility functions
+(defun alist-path-recursive (object keys)
+    (if keys
+	(alist-path-recursive (cdr (assoc (car keys) object)) (cdr keys))
+	object))
+
+(defun alist-path (object &rest keys)
+  "Walk down an AList path"
+  (alist-path-recursive object keys))
+
+;;; Battlesnake logic helpers
+(defparameter +delta-to-direction+
+  '(((0 1) . "up")
+    ((0 -1) . "down")
+    ((-1 0) . "left")
+    ((1 0) . "right")))
+
+(defun init-deltas ()
+  "Returns all possible deltas in a list"
+  (list '(0 1) '(0 -1) '(-1 0) '(1 0)))
+
+(defun delta-to-direction (delta)
+  "Converts a delta to a direction string"
+  (cdr (assoc delta +delta-to-direction+ :test 'equal)))
+
+(defun select-delta (deltas)
+  "Chooses randomly from a list of deltas (returns 'up' if the list is empty)"
+  (let ((length (length deltas)))
+    (if (> length 0)
+	(nth (random length) deltas)
+	'(0 1))))
+
+(defun point-to-list (point)
+  "Converts from Battlesnake coordinates to a list, e.g. '{x: 1, y: 2}' to (1 2)"
+  (list (cdr (assoc :x point)) (cdr (assoc :y point))))
+
+(defun add-delta (point delta)
+  "Adds a delta to a point"
+  (mapcar #'+ point delta))
+
+(defun out-of-boundsp (position dimensions)
+  "Returns true if the position is out of bounds"
+  (loop for x in position
+	for length in dimensions
+	when (or (< x 0) (>= x length)) return t))
+
+(defun prune-out-of-bounds (deltas data)
+  (let* ((head-position (point-to-list (alist-path data :you :head)))
+	 (board (cdr (assoc :board data)))
+	 (dimensions (list (cdr (assoc :width board)) (cdr (assoc :height board)))))
+    (remove-if #'(lambda (delta) (out-of-boundsp (add-delta head-position delta) dimensions))
+	       deltas)))
+
+;;; Battlesnake logic entry points
 (defun think-random (data)
   "Moves randomly, possibly even into itself"
   (declare (ignore data))
-  (ecase (random 4)
-    (0 "up")
-    (1 "down")
-    (2 "left")
-    (3 "right")))
+  (select-delta (init-deltas)))
+
+(defun think-bounds (data)
+  "Move randomly, but avoids going out of bounds"
+  (select-delta (prune-out-of-bounds (init-deltas) data)))
+
+(defun think-empty (data)
+  "Moves randomly, but tries to avoid occupied spaces"
+  (break)
+  (think-random data))
 
 ;;; Battlesnake minimal API implementation
 (defvar *snakes* (make-hash-table :test 'equal) "Table of snake ids to logic functions")
@@ -38,7 +96,7 @@
        (json (cl-json:decode-json-from-string json-string)))
     (cl-json:encode-json-alist-to-string
      (list
-      (cons "move" (funcall logic json))))))
+      (cons "move" (delta-to-direction (funcall logic json)))))))
 
 (defparameter *handlers*
   (list
