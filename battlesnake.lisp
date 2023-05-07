@@ -153,11 +153,10 @@
   (let* ((json-string (hunchentoot:raw-post-data :force-text t))
 	 (json (cl-json:decode-json-from-string json-string)))
     ;;; Note: need to work around latency only being set under "board" and not "you"...
-    (spew "Move (~a) (Latency: ~ams )~%"
-	  (symbol-name logic)
+    (spew " Latency: ~ams"
 	  (let ((you-id (alist-path json :you :id)))
 	    (alist-path (find-if #'(lambda (snake) (string= you-id (alist-path snake :id)))
-					    (alist-path json :board :snakes))
+				 (alist-path json :board :snakes))
 			:latency)))
     (cl-json:encode-json-alist-to-string
      (list
@@ -184,7 +183,10 @@
 	 (logic (and id-and-route (gethash (car id-and-route) *snakes*)))
 	 (route (and id-and-route (assoc (list method (cdr id-and-route)) *handlers* :test #'equal))))
     (if (and logic route)
-	(funcall (cdr route) logic)
+	(progn (spew "~a ~a:" method uri)
+	       (let ((response (funcall (cdr route) logic)))
+		 (spew "~%")
+		 response))
 	(progn
 	  (setf (hunchentoot:return-code hunchentoot:*reply*) hunchentoot:+http-not-found+)
 	  ""))))
