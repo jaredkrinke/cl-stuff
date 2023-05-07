@@ -1,7 +1,5 @@
-;;;; Minimal, local-only HTTP server based on Hunchentoot, without default resources/error templates
-(require "hunchentoot")
-
 (defpackage :min-http
+  (:documentation "Minimal, local-only HTTP server based on Hunchentoot, without default resources/error template")
   (:use :cl)
   (:export :server))
 

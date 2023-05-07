@@ -1,9 +1,5 @@
-;;;; Battlesnake proof-of-concept
-(require "cl-json")
-
-(load "min-http.lisp")
-
-(defpackage :battlesnake-poc
+(defpackage :battlesnake
+  (:documentation "Battlesnake implementations and webhook host")
   (:use :cl))
 
 (in-package :battlesnake-poc)
@@ -89,12 +85,10 @@
 
 (defun think-self (data)
   "Move randomly, avoiding walls and self"
-  (select-delta
-   (prune-self
-    (prune-out-of-bounds
-     (init-deltas)
-     data)
-    data)))
+  (arrow-macros:-> (init-deltas)
+    (prune-out-of-bounds data)
+    (prune-self data)
+    (select-delta)))
 
 (defun think-empty (data)
   "Moves randomly, but tries to avoid occupied spaces"
