@@ -74,6 +74,27 @@
     (mapcar #'(lambda (position) (subtract-delta position head-position))
 	    (set-difference next-positions body-positions :test 'equal))))
 
+(defun make-board-mask (data)
+  "Creates a two-dimensional Boolean array for occupied spaces"
+  ;;; TODO: Avoid hazards too?
+  (let* ((board (alist-path data :board))
+	 (dimensions (list (alist-path board :width) (alist-path board :height)))
+	 (mask (make-array dimensions :initial-element nil))
+	 (snakes (alist-path board :snakes)))
+    (loop for snake in snakes do
+      (loop for point in (alist-path snake :body) do
+	(let ((position (point-to-list point)))
+	  (setf (apply #'aref mask position) t))))
+    mask))
+
+(defun prune-occupied (deltas data)
+  "Prunes deltas that would result in a wall collision"
+  (let* ((head-position (point-to-list (alist-path data :you :head)))
+	 (occupied (make-board-mask data)))
+    (remove-if #'(lambda (delta)
+		   (apply #'aref occupied (add-delta head-position delta)))
+	       deltas)))
+
 ;;; Battlesnake logic entry points
 (defun think-random (data)
   "Moves randomly, possibly even into itself"
@@ -93,8 +114,10 @@
 
 (defun think-empty (data)
   "Moves randomly, but tries to avoid occupied spaces"
-  (break)
-  (think-random data))
+  (-> (init-deltas)
+    (prune-out-of-bounds data)
+    (prune-occupied data)
+    (select-delta)))
 
 ;;; Battlesnake minimal API implementation
 (defvar *snakes* (make-hash-table :test 'equal) "Table of snake ids to logic functions")
