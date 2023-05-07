@@ -27,6 +27,7 @@
 
 (defun init-deltas ()
   "Returns all possible deltas in a list"
+  ;;; TODO: Could be extracted from +delta-to-direction+
   (list '(0 1) '(0 -1) '(-1 0) '(1 0)))
 
 (defun delta-to-direction (delta)
@@ -45,8 +46,12 @@
   (list (cdr (assoc :x point)) (cdr (assoc :y point))))
 
 (defun add-delta (point delta)
-  "Adds a delta to a point"
+  "Adds a delta to a position"
   (mapcar #'+ point delta))
+
+(defun subtract-delta (point delta)
+  "Subtracts a delta from a position"
+  (mapcar #'- point delta))
 
 (defun out-of-boundsp (position dimensions)
   "Returns true if the position is out of bounds"
@@ -55,11 +60,22 @@
 	when (or (< x 0) (>= x length)) return t))
 
 (defun prune-out-of-bounds (deltas data)
+  "Prunes deltas that would result in a wall collision"
   (let* ((head-position (point-to-list (alist-path data :you :head)))
 	 (board (cdr (assoc :board data)))
 	 (dimensions (list (cdr (assoc :width board)) (cdr (assoc :height board)))))
     (remove-if #'(lambda (delta) (out-of-boundsp (add-delta head-position delta) dimensions))
 	       deltas)))
+
+(defun prune-self (deltas data)
+  "Prunes deltas that would collide with itself"
+  (let* ((self (cdr (assoc :you data)))
+	 (head-position (point-to-list (alist-path self :head)))
+	 (next-positions (mapcar #'(lambda (delta) (add-delta head-position delta)) deltas))
+	 (body-positions (mapcar #'(lambda (point) (point-to-list point))
+				 (cdr (assoc :body self)))))
+    (mapcar #'(lambda (position) (subtract-delta position head-position))
+	    (set-difference next-positions body-positions :test 'equal))))
 
 ;;; Battlesnake logic entry points
 (defun think-random (data)
@@ -70,6 +86,15 @@
 (defun think-bounds (data)
   "Move randomly, but avoids going out of bounds"
   (select-delta (prune-out-of-bounds (init-deltas) data)))
+
+(defun think-self (data)
+  "Move randomly, avoiding walls and self"
+  (select-delta
+   (prune-self
+    (prune-out-of-bounds
+     (init-deltas)
+     data)
+    data)))
 
 (defun think-empty (data)
   "Moves randomly, but tries to avoid occupied spaces"
