@@ -1,5 +1,6 @@
 (defpackage :battlesnake
   (:documentation "Battlesnake implementations and webhook host")
+  (:nicknames bs)
   (:use :cl)
   (:import-from :arrow-macros :->))
 
@@ -16,11 +17,17 @@
   (alist-path-recursive object keys))
 
 ;;; Battlesnake logic helpers
+(defvar *verbose* nil "Set to non-nil to enable verbose logging")
+
 (defparameter +delta-to-direction+
   '(((0 1) . "up")
     ((0 -1) . "down")
     ((-1 0) . "left")
     ((1 0) . "right")))
+
+(defmacro spew (&rest args)
+  "Logs to the console, if *verbose* is non-nil"
+  `(and *verbose* (format t ,@args)))
 
 (defun init-deltas ()
   "Returns all possible deltas in a list"
@@ -119,6 +126,14 @@
     (prune-occupied data)
     (select-delta)))
 
+(defparameter *all-snakes*
+  (loop for think in (list 'think-random
+			   'think-bounds
+			   'think-self
+			   'think-empty)
+	collect (cons (string-downcase (subseq (symbol-name think) (length "think-")))
+		      think)))
+
 ;;; Battlesnake minimal API implementation
 (defvar *snakes* (make-hash-table :test 'equal) "Table of snake ids to logic functions")
 
@@ -126,6 +141,7 @@
 
 (defclass server (min-http:server)
   ()
+  (:default-initargs :access-log-destination nil)
   (:documentation "Battlesnake proof-of-concept"))
 
 (defun create-root-response (data)
@@ -134,9 +150,15 @@
    '(("apiversion" . "1"))))
 
 (defun create-move-response (logic)
-  (let*
-      ((json-string (hunchentoot:raw-post-data :force-text t))
-       (json (cl-json:decode-json-from-string json-string)))
+  (let* ((json-string (hunchentoot:raw-post-data :force-text t))
+	 (json (cl-json:decode-json-from-string json-string)))
+    ;;; Note: need to work around latency only being set under "board" and not "you"...
+    (spew "Move (~a) (Latency: ~ams )~%"
+	  (symbol-name logic)
+	  (let ((you-id (alist-path json :you :id)))
+	    (alist-path (find-if #'(lambda (snake) (string= you-id (alist-path snake :id)))
+					    (alist-path json :board :snakes))
+			:latency)))
     (cl-json:encode-json-alist-to-string
      (list
       (cons "move" (delta-to-direction (funcall logic json)))))))
@@ -161,7 +183,7 @@
 	 (id-and-route (parse-uri uri))
 	 (logic (and id-and-route (gethash (car id-and-route) *snakes*)))
 	 (route (and id-and-route (assoc (list method (cdr id-and-route)) *handlers* :test #'equal))))
-    (if route
+    (if (and logic route)
 	(funcall (cdr route) logic)
 	(progn
 	  (setf (hunchentoot:return-code hunchentoot:*reply*) hunchentoot:+http-not-found+)
@@ -185,3 +207,12 @@
 (defun snake-remove (id)
   "Removes a snake from the Battlesnake webhook server"
   (remhash id *snakes*))
+
+(defun snake-defaults ()
+  "Loads default snakes (all of them)"
+  (loop for pair in *all-snakes* do (snake-add (car pair) (cdr pair))))
+
+(defun run ()
+  "Loads default snakes and starts the server"
+  (snake-defaults)
+  (start))
