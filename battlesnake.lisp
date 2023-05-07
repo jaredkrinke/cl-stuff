@@ -1,8 +1,9 @@
 (defpackage :battlesnake
   (:documentation "Battlesnake implementations and webhook host")
-  (:use :cl))
+  (:use :cl)
+  (:import-from :arrow-macros :->))
 
-(in-package :battlesnake-poc)
+(in-package :battlesnake)
 
 ;;; Utility functions
 (defun alist-path-recursive (object keys)
@@ -85,7 +86,7 @@
 
 (defun think-self (data)
   "Move randomly, avoiding walls and self"
-  (arrow-macros:-> (init-deltas)
+  (-> (init-deltas)
     (prune-out-of-bounds data)
     (prune-self data)
     (select-delta)))
