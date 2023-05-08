@@ -2,7 +2,10 @@
   (:documentation "Battlesnake implementations and webhook host")
   (:nicknames bs)
   (:use :cl)
-  (:import-from :arrow-macros :->))
+  (:import-from :arrow-macros :->)
+  (:export #:start
+	   #:stop
+	   #:run))
 
 (in-package :battlesnake)
 
