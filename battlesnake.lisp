@@ -217,4 +217,13 @@
 (defun run ()
   "Loads default snakes and starts the server"
   (snake-defaults)
-  (start))
+  (start)
+
+  ;;; Warm up the server
+  (format t "Running warm-up query...")
+  (let ((response (drakma:http-request (format nil
+					       "http://~a:~a/~a/"
+					       (hunchentoot:acceptor-address *server*)
+					       (hunchentoot:acceptor-port *server*)
+					       (car (first *all-snakes*))))))
+    (format t "Response length: ~a~%" (length response))))

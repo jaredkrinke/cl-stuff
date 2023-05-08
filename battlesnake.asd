@@ -1,5 +1,6 @@
 (asdf:defsystem #:battlesnake
   :depends-on (#:hunchentoot
+	       #:drakma
 	       #:cl-json
 	       #:arrow-macros)
   :serial t
