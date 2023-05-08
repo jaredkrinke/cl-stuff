@@ -28,6 +28,10 @@
     ((-1 0) . "left")
     ((1 0) . "right")))
 
+(defun format-time (time)
+  (multiple-value-bind (second minute hour) (decode-universal-time time)
+    (format nil "~2,'0d:~2,'0d:~2,3,,,'0f" hour minute second)))
+
 (defmacro spew (&rest args)
   "Logs to the console, if *verbose* is non-nil"
   `(and *verbose* (format t ,@args)))
@@ -152,6 +156,14 @@
   (cl-json:encode-json-alist-to-string
    '(("apiversion" . "1"))))
 
+(defun create-start-response (data)
+  (let* ((json-string (hunchentoot:raw-post-data :force-text t))
+	 (json (cl-json:decode-json-from-string json-string)))
+    (format t "~%~a: Starting new game (~a): ~a~%"
+	    (format-time (get-universal-time))
+	    data
+	    (alist-path json :game :id))))
+
 (defun create-move-response (logic)
   (let* ((json-string (hunchentoot:raw-post-data :force-text t))
 	 (json (cl-json:decode-json-from-string json-string)))
@@ -168,6 +180,7 @@
 (defparameter *handlers*
   (list
    (cons '(:get "/") 'create-root-response)
+   (cons '(:post "/start") 'create-start-response)
    (cons '(:post "/move") 'create-move-response)))
 
 (defun parse-uri (uri)
