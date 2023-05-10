@@ -1,7 +1,8 @@
 (defpackage :tournament
   (:documentation "Battlesnake local tournament, for ranking different implementations")
   (:nicknames bst)
-  (:use :cl))
+  (:use :cl)
+  (:export #:run))
 
 (in-package :tournament)
 
@@ -60,3 +61,7 @@
 	collect (let ((name (car pair)))
 		  (cons name
 			(format nil "http://127.0.0.1:8888/~a/" name)))))
+
+(defun run (&optional (count 19))
+  "Run 'count' local games and log ranked results"
+  (run-and-report-matches (make-local-snakes) count))
