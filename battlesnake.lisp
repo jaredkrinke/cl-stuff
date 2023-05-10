@@ -160,7 +160,7 @@
 (defun create-start-response (data)
   (let* ((json-string (hunchentoot:raw-post-data :force-text t))
 	 (json (cl-json:decode-json-from-string json-string)))
-    (format t "~%~a: Starting new game (~a): ~a~%"
+    (spew "~%~a: Starting new game (~a): ~a~%"
 	    (format-time (get-universal-time))
 	    data
 	    (alist-path json :game :id))))
