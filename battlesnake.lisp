@@ -5,7 +5,8 @@
   (:import-from :arrow-macros :->)
   (:export #:start
 	   #:stop
-	   #:run))
+	   #:run
+	   #:*all-snakes*))
 
 (in-package :battlesnake)
 
