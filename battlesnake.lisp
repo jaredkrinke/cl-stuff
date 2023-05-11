@@ -62,6 +62,17 @@
   "Compute the sum of distances along each axis ('Manhattan' distance)"
   (reduce #'(lambda (x sum) (+ (abs x) (abs sum))) delta :initial-value 0))
 
+(defun distance-between (a b)
+  "Compute the sum of distances along each axis between two points ('Manhattan' distance)"
+  (distance (subtract-delta a b)))
+
+(defun get-other-snakes (data)
+  "Gets a list of enemy snake objects"
+  (let ((id (alist-path data :you :id))
+	(snakes (alist-path data :board :snakes)))
+    (remove-if #'(lambda (snake) (string-equal id (alist-path snake :id)))
+	       snakes)))
+
 (defun find-nearest-food (data)
   "Create a list of food offsets, sorted from closest to farthest"
   (let* ((head-position (point-to-list (alist-path data :you :head)))
@@ -138,6 +149,19 @@
 		   (apply #'aref occupied (add-delta head-position delta)))
 	       deltas)))
 
+(defun prune-possible-collisions (deltas data)
+  "Prunes deltas that could result in a head-to-head collision"
+  (let* ((head-position (point-to-list (alist-path data :you :head)))
+	 (enemies (get-other-snakes data))
+	 (enemy-positions (mapcar #'(lambda (enemy) (point-to-list (alist-path enemy :head)))
+				  enemies)))
+    (remove-if #'(lambda (delta)
+		   (let ((new-position (add-delta head-position delta)))
+		     (some #'(lambda (enemy-position)
+			       (<= (distance-between new-position enemy-position) 1))
+			   enemy-positions)))
+	       deltas)))
+
 ;;; Battlesnake logic entry points
 (defun think-random (data)
   "Moves randomly, possibly even into itself"
@@ -169,12 +193,21 @@
     (prune-occupied data)
     (select-delta-with-closest-food data)))
 
+(defun think-avoid (data)
+  "Moves toward nearest food, avoiding collisions/occupied spaces"
+  (-> (init-deltas)
+    (prune-out-of-bounds data)
+    (prune-occupied data)
+    (prune-possible-collisions data)
+    (select-delta-with-closest-food data)))
+
 (defparameter *all-snakes*
   (loop for think in (list 'think-random
 			   'think-bounds
 			   'think-self
 			   'think-empty
-			   'think-food)
+			   'think-food
+			   'think-avoid)
 	collect (cons (string-downcase (subseq (symbol-name think) (length "think-")))
 		      think)))
 
