@@ -46,13 +46,6 @@
   "Converts a delta to a direction string"
   (cdr (assoc delta +delta-to-direction+ :test 'equal)))
 
-(defun select-delta (deltas)
-  "Chooses randomly from a list of deltas (returns 'up' if the list is empty)"
-  (let ((length (length deltas)))
-    (if (> length 0)
-	(nth (random length) deltas)
-	'(0 1))))
-
 (defun point-to-list (point)
   "Converts from Battlesnake coordinates to a list, e.g. '{x: 1, y: 2}' to (1 2)"
   (list (cdr (assoc :x point)) (cdr (assoc :y point))))
@@ -64,6 +57,41 @@
 (defun subtract-delta (point delta)
   "Subtracts a delta from a position"
   (mapcar #'- point delta))
+
+(defun distance (delta)
+  "Compute the sum of distances along each axis ('Manhattan' distance)"
+  (reduce #'(lambda (x sum) (+ (abs x) (abs sum))) delta :initial-value 0))
+
+(defun find-nearest-food (data)
+  "Create a list of food offsets, sorted from closest to farthest"
+  (let* ((head-position (point-to-list (alist-path data :you :head)))
+	 (food-positions (mapcar #'point-to-list (alist-path data :board :food)))
+	 (offsets (mapcar #'(lambda (o) (subtract-delta o head-position)) food-positions))
+	 (pairs (loop for offset in offsets collect (cons offset (distance offset))))
+	 (sorted (sort pairs #'(lambda (a b) (< (cdr a) (cdr b))))))
+    (caar sorted)))
+
+(defun prune-unaligned (deltas ideal-delta)
+  "Prunes deltas that aren't aligned with the given ideal delta"
+  (remove-if #'(lambda (delta) (loop for a in delta for b in ideal-delta
+				     if (and (not (= a 0)) (<= (* a b) 0))
+				       return t
+				       finally (return nil)))
+	     deltas))
+
+(defun select-delta (deltas)
+  "Chooses randomly from a list of deltas (returns 'up' if the list is empty)"
+  (let ((length (length deltas)))
+    (if (> length 0)
+	(nth (random length) deltas)
+	'(0 1))))
+
+(defun select-delta-with-closest-food (deltas data)
+  "Chooses from a list of deltas the one with closest food (or random if no food)"
+  (let ((aligned-deltas (prune-unaligned deltas (find-nearest-food data))))
+    (if aligned-deltas
+	(select-delta aligned-deltas)
+	(select-delta deltas))))
 
 (defun out-of-boundsp (position dimensions)
   "Returns true if the position is out of bounds"
@@ -134,11 +162,19 @@
     (prune-occupied data)
     (select-delta)))
 
+(defun think-food (data)
+  "Moves towards nearest food, trying to avoid occupied spaces"
+  (-> (init-deltas)
+    (prune-out-of-bounds data)
+    (prune-occupied data)
+    (select-delta-with-closest-food data)))
+
 (defparameter *all-snakes*
   (loop for think in (list 'think-random
 			   'think-bounds
 			   'think-self
-			   'think-empty)
+			   'think-empty
+			   'think-food)
 	collect (cons (string-downcase (subseq (symbol-name think) (length "think-")))
 		      think)))
 
