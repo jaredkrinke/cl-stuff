@@ -11,7 +11,7 @@
   (flet ((sequence-to-arguments (flag sequence)
 	   (apply #'concatenate 'string
 		  (loop for item in sequence collect (format nil " -~a ~a" flag item)))))
-    (format nil "./battlesnake play -s ~a ~a"
+    (format nil "./battlesnake play -s -t 999999999 ~a ~a"
 	    (sequence-to-arguments "n" (mapcar #'car snakes))
 	    (sequence-to-arguments "u" (mapcar #'cdr snakes)))))
 
