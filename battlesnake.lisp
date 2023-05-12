@@ -2,7 +2,7 @@
   (:documentation "Battlesnake implementations and webhook host")
   (:nicknames bs)
   (:use :cl)
-  (:import-from :arrow-macros :->)
+  (:import-from :arrow-macros :-> :->>)
   (:export #:start
 	   #:stop
 	   #:run
@@ -82,8 +82,17 @@
 	 (sorted (sort pairs #'(lambda (a b) (< (cdr a) (cdr b))))))
     (caar sorted)))
 
+(defun get-nearest-food-aligned (deltas ideal-delta)
+  "Returns a list with non-nil for all deltas that are aligned with the nearest food"
+  (mapcar #'(lambda (delta) (loop for a in delta for b in ideal-delta
+				  if (and (not (= a 0)) (<= (* a b) 0))
+				    return t
+				  finally (return nil)))
+	  deltas))
+
 (defun prune-unaligned (deltas ideal-delta)
   "Prunes deltas that aren't aligned with the given ideal delta"
+  ;; TODO: Rewrite using the above
   (remove-if #'(lambda (delta) (loop for a in delta for b in ideal-delta
 				     if (and (not (= a 0)) (<= (* a b) 0))
 				       return t
@@ -149,17 +158,77 @@
 		   (apply #'aref occupied (add-delta head-position delta)))
 	       deltas)))
 
+(defun get-collision-outcome (my-length enemy-length)
+  "Computes the outcome of a head-to-head collision"
+  (cond ((> my-length enemy-length) :win)
+	(t :lose)))
+
+(defun get-possible-collisions (deltas data)
+  "Gets a list of potential collision outcomes (non-nil for win) for each delta"
+  (let* ((me (alist-path data :you))
+	 (my-position (point-to-list (alist-path me :head)))
+	 (my-length (length (alist-path me :body)))
+	 (enemies (get-other-snakes data))
+	 (enemies-data (mapcar #'(lambda (enemy)
+				   (list :position (point-to-list (alist-path enemy :head))
+					 :outcome (get-collision-outcome my-length (length (alist-path enemy :body)))))
+			       enemies)))
+    (mapcar #'(lambda (delta)
+		(let ((new-position (add-delta my-position delta)))
+		  (->> (remove-if #'(lambda (enemy-data) (> (distance-between new-position
+									      (getf enemy-data :position))
+							    1))
+				  enemies-data)
+		    (mapcar #'(lambda (enemy-data) (eql :win (getf enemy-data :outcome)))))))
+	    deltas)))
+
+(defun annotate-deltas (deltas data)
+  "Annotate deltas with reasons (e.g. head towards food or potentially eliminate an enemy"
+  (let ((possible-collisions (get-possible-collisions deltas data))
+	(food-aligned (get-nearest-food-aligned deltas (find-nearest-food data))))
+    (mapcar #'(lambda (collisions food)
+		(let ((reasons nil))
+		  (if collisions
+		      (if (every #'identity collisions)
+			  (pushnew :maybe-win reasons)
+			  (pushnew :maybe-lose reasons)))
+		  (if food (pushnew :toward-food reasons))
+		  reasons))
+	    possible-collisions
+	    food-aligned)))
+
+(defun compute-priority (annotation reason-priorities)
+  "Computes the priority of a delta, given the prioritization a-list"
+  (reduce #'+
+	  (mapcar #'cdr
+		  (remove-if-not #'(lambda (pair) (member (car pair) annotation))
+				 reason-priorities))
+	  :initial-value 0))
+
+(defun prune-by-priority (deltas annotations reason-priorities)
+  "Selects deltas based on prioritized reasoning"
+  (let* ((pairs (loop for delta in deltas for annotation in annotations
+		      collect (cons delta (compute-priority annotation reason-priorities))))
+	 (max-priority (and pairs (apply #'max (mapcar #'cdr pairs)))))
+    (mapcar #'car (remove-if-not #'(lambda (pair) (= max-priority (cdr pair))) pairs))))
+
 (defun prune-possible-collisions (deltas data)
   "Prunes deltas that could result in a head-to-head collision"
-  (let* ((head-position (point-to-list (alist-path data :you :head)))
+  ;; TODO: Rewrite to use add-possible-collisions
+  (let* ((me (alist-path data :you))
+	 (head-position (point-to-list (alist-path me :head)))
+	 (my-length (length (alist-path data me :body)))
 	 (enemies (get-other-snakes data))
-	 (enemy-positions (mapcar #'(lambda (enemy) (point-to-list (alist-path enemy :head)))
-				  enemies)))
+	 (enemies-data (mapcar #'(lambda (enemy)
+				   (list :position (point-to-list (alist-path enemy :head))
+					 :length (length (alist-path enemy :body))))
+			       enemies)))
     (remove-if #'(lambda (delta)
 		   (let ((new-position (add-delta head-position delta)))
-		     (some #'(lambda (enemy-position)
-			       (<= (distance-between new-position enemy-position) 1))
-			   enemy-positions)))
+		     (some #'(lambda (enemy-data)
+			       (if (>= my-length (getf enemy-data :length))
+				   (<= (distance-between new-position (getf enemy-data :position)) 1)))
+			   enemies-data)))
 	       deltas)))
 
 ;;; Battlesnake logic entry points
@@ -201,13 +270,26 @@
     (prune-possible-collisions data)
     (select-delta-with-closest-food data)))
 
+(defun think-hunt (data)
+  "Moves toward nearest food, attacking shorter snakes along the way"
+  (let ((deltas (-> (init-deltas)
+		  (prune-out-of-bounds data)
+		  (prune-occupied data))))
+    (-> (prune-by-priority deltas
+			   (annotate-deltas deltas data)
+			   '((:maybe-win . 10)
+			     (:toward-food . 1)
+			     (:maybe-lose . -10)))
+      (select-delta))))
+
 (defparameter *all-snakes*
   (loop for think in (list 'think-random
 			   'think-bounds
 			   'think-self
 			   'think-empty
 			   'think-food
-			   'think-avoid)
+			   'think-avoid
+			   'think-hunt)
 	collect (cons (string-downcase (subseq (symbol-name think) (length "think-")))
 		      think)))
 
