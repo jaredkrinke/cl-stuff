@@ -86,8 +86,8 @@
   "Returns a list with non-nil for all deltas that are aligned with the nearest food"
   (mapcar #'(lambda (delta) (loop for a in delta for b in ideal-delta
 				  if (and (not (= a 0)) (<= (* a b) 0))
-				    return t
-				  finally (return nil)))
+				    return nil
+				  finally (return t)))
 	  deltas))
 
 (defun prune-unaligned (deltas ideal-delta)
