@@ -55,13 +55,14 @@
   (let ((length (length sequence)))
     (subseq sequence (max 0 (- length n)))))
 
-(defun make-local-snakes ()
-  "Get the last 4 snakes from the list of all snakes"
-  (loop for pair in (last-n bs:*all-snakes* 4)
-	collect (let ((name (car pair)))
-		  (cons name
-			(format nil "http://127.0.0.1:8888/~a/" name)))))
+(defun make-local-snake (name-as-symbol)
+  (let ((name (string-downcase (symbol-name name-as-symbol))))
+    (cons name (format nil "http://127.0.0.1:8888/~a/" name))))
 
-(defun run (&optional (count 19))
+(defun make-local-snakes (&optional (names (mapcar #'(lambda (pair) (make-symbol (first pair))) (last-n bs:*all-snakes* 4))))
+  "Get the last 4 snakes from the list of all snakes"
+  (mapcar #'make-local-snake names))
+
+(defun run (&key (count 21) (snakes (make-local-snakes)))
   "Run 'count' local games and log ranked results"
-  (run-and-report-matches (make-local-snakes) count))
+  (run-and-report-matches snakes count))
