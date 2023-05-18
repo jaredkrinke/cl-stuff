@@ -20,6 +20,41 @@
   "Walk down an AList path"
   (alist-path-recursive object keys))
 
+;;; CL-native Battlesnake state representation
+(defstruct snake
+  id
+  latency
+  health
+  body)
+
+(defstruct state
+  id
+  timeout
+  turn
+  dimensions
+  snakes
+  food
+  board)
+
+(defun parse-position (position)
+  (list (alist-path position :x) (alist-path position :y)))
+
+(defun parse-snake (snake)
+  (make-snake :id (alist-path snake :id)
+	      :latency (parse-integer (alist-path snake :latency))
+	      :health (alist-path snake :health)
+	      :body (mapcar #'parse-position (alist-path snake :body))))
+
+(defun parse-state (data)
+  (let ((game (alist-path data :game))
+	(board (alist-path data :board)))
+    (make-state :id (alist-path game :id)
+		:timeout (alist-path game :timeout)
+		:turn (alist-path data :turn)
+		:dimensions (list (alist-path board :width) (alist-path board :height))
+		:snakes (mapcar #'parse-snake (alist-path board :snakes))
+		:food (mapcar #'parse-position (alist-path board :food)))))
+
 ;;; Battlesnake logic helpers
 (defvar *verbose* nil "Set to non-nil to enable verbose logging")
 
