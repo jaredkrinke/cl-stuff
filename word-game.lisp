@@ -139,7 +139,7 @@
     (format t "~%~%Unscramble the following word")
     (loop
       (format t
-	      " (enter 'q' to give up):~%  ~a~a~%  ~a~%~%> "
+	      " (or 'q' to give up):~%  ~a~a~%  ~a~%~%> "
 	      (char-repeat #\Space tries)
 	      (char-repeat #\_ (- *puzzle-length* tries))
 	      scrambled)
@@ -154,3 +154,30 @@
 	       (format t "~%~%Nope! Guess again")
 	       ;; TODO: Fail if unscrambling solves the puzzle
 	       (unscramble scrambled solution (1- tries))))))))
+
+(defun menu ()
+  "Show the title menu and prompt for difficulty level (or exit)"
+  (format t
+	  "
+=== Thirteen Letters ===
+
+ - Goal: Unscramble a thirteen-letter word in as few guesses as possible.
+ - After each incorrect guess, one letter will be unscrambled.
+ - There are ten difficulty levels (1 being the easiest and ~a the hardest)~%~%"
+	  *difficulty-buckets*)
+
+  (loop with continue = t
+	while continue
+	do (format t
+		   "Enter a difficulty level, 1 - ~a (or 'q' to quit):~%~%> "
+		   *difficulty-buckets*)
+	   (let* ((input (read-line))
+		  (number (parse-integer input :junk-allowed t))
+		  (difficulty (and number (>= number 1) (<= number *difficulty-buckets*) number)))
+	     (cond ((string= "q" input)
+		    (format t "~%~%So long!~%")
+		    (setf continue nil))
+		   (difficulty
+		    (play (1- difficulty))
+		   (t
+		    (format t "~%Invalid input!~%"))))))
