@@ -112,6 +112,20 @@
 ;;; The actual game
 (defparameter *bucketed-words* (load-bucketed-puzzles))
 
+(defun fully-scrambled-p (scrambled solution)
+  "Returns NIL if any character in SCRAMBLED matches a letter in SOLUTION"
+  (loop for scrambled-character across scrambled
+	for solution-character across solution
+	when (char-equal scrambled-character solution-character) do (return nil)
+	finally (return t)))
+
+(defun scramble (word)
+  "Shuffles a word, ensuring that no character is in the correct place"
+  (loop with scrambled = word
+	until (fully-scrambled-p scrambled word)
+	do (setf scrambled (shuffle-string scrambled))
+	finally (return scrambled)))
+
 (defun unscramble (scrambled solution index)
   "Unscrambles the letter at INDEX in SCRAMBLED"
   (let* ((c (aref solution index))
@@ -121,8 +135,7 @@
 (defun play (&optional (difficulty 0))
   (let* ((tries 0)
 	 (solution (get-random (nth difficulty *bucketed-words*)))
-	 ;; TODO: Ensure not the same as solution!
-	 (scrambled (shuffle-string solution)))
+	 (scrambled (scramble solution)))
     (format t "~%~%Unscramble the following word")
     (loop
       (format t
@@ -139,4 +152,5 @@
 	       (return-from play))
 	      (t
 	       (format t "~%~%Nope! Guess again")
+	       ;; TODO: Fail if unscrambling solves the puzzle
 	       (unscramble scrambled solution (1- tries))))))))
