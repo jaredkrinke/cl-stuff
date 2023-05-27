@@ -33,6 +33,25 @@
 	       (setf list tail)))
     (nreverse partitions)))
 
+(defun get-random (sequence)
+  "Randomly selects an item from SEQUENCE"
+  (nth (random (length sequence)) sequence))
+
+(defun shuffle (sequence &rest rest &key &allow-other-keys)
+  "Returns a copy of SEQUENCE (as an array) with its elements shuffled (note: extra arguments are passed to MAKE-ARRAY)"
+  (let* ((length (length sequence))
+	 (array (apply #'make-array length :initial-contents sequence rest)))
+    (loop for i upfrom 0
+	  for n downfrom length
+	  while (> n 1)
+	  do (let ((target (+ i (random n))))
+	       (rotatef (aref array i) (aref array target))))
+    array))
+
+(defun shuffle-string (string)
+  "Returns a copy of STRING with its characters shuffled"
+  (shuffle string :element-type 'character))
+
 ;;; Word list and frequency tools
 (defparameter *puzzle-length* 13)
 (defparameter *difficulty-buckets* 10)
@@ -77,3 +96,26 @@
 	 (sorted-rates (sort rates #'(lambda (a b) (> (cdr a) (cdr b)))))
 	 (sorted (mapcar #'car sorted-rates)))
     (split-list sorted (ceiling (/ (length sorted) *difficulty-buckets*)))))
+
+;;; The actual game
+(defparameter *bucketed-words* (load-bucketed-puzzles))
+
+(defun play (&optional (difficulty 0))
+  (let* ((start-time (get-internal-real-time))
+	 (solution (get-random (nth difficulty *bucketed-words*)))
+	 ;; TODO: Ensure not the same as solution!
+	 (scrambled (shuffle-string solution)))
+    (break)
+    (format t "~%~%Unscramble the following word")
+    (loop
+      (format t " (enter 'q' to give up):~%~%  ~a~%~%> " scrambled)
+      (let* ((guess (read-line))
+	     (guess-time (get-internal-real-time)))
+	(cond ((string= guess solution)
+	       (let ((seconds (float (/ (- guess-time start-time)
+					internal-time-units-per-second))))
+		 (format t "~%~%Correct! (Solved in ~a seconds)~%~%" seconds)
+		 (return-from play seconds)))
+	      ((string= guess "q") (format t "~%~% Better luck next time!~%~%")
+	       (return-from play))
+	      (t (format t "~%~%Nope! Guess again")))))))
