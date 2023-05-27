@@ -60,6 +60,10 @@
   "Returns a copy of STRING with its characters shuffled"
   (shuffle string :element-type 'character))
 
+(defun char-repeat (character times)
+  "Returns a string with CHARACTER repeated TIMES times"
+  (make-array times :element-type 'character :initial-element character))
+
 ;;; Word list and frequency tools
 (defparameter *puzzle-length* 13)
 (defparameter *difficulty-buckets* 10)
@@ -108,21 +112,31 @@
 ;;; The actual game
 (defparameter *bucketed-words* (load-bucketed-puzzles))
 
+(defun unscramble (scrambled solution index)
+  "Unscrambles the letter at INDEX in SCRAMBLED"
+  (let* ((c (aref solution index))
+	 (target (position c scrambled :start index)))
+    (rotatef (aref scrambled index) (aref scrambled target))))
+
 (defun play (&optional (difficulty 0))
-  (let* ((start-time (get-internal-real-time))
+  (let* ((tries 0)
 	 (solution (get-random (nth difficulty *bucketed-words*)))
 	 ;; TODO: Ensure not the same as solution!
 	 (scrambled (shuffle-string solution)))
     (format t "~%~%Unscramble the following word")
     (loop
-      (format t " (enter 'q' to give up):~%~%  ~a~%~%> " scrambled)
-      (let* ((guess (read-line))
-	     (guess-time (get-internal-real-time)))
+      (format t
+	      " (enter 'q' to give up):~%  ~a~a~%  ~a~%~%> "
+	      (char-repeat #\Space tries)
+	      (char-repeat #\_ (- *puzzle-length* tries))
+	      scrambled)
+      (incf tries)
+      (let* ((guess (read-line)))
 	(cond ((string= guess solution)
-	       (let ((seconds (float (/ (- guess-time start-time)
-					internal-time-units-per-second))))
-		 (format t "~%~%Correct! (Solved in ~a seconds)~%~%" seconds)
-		 (return-from play seconds)))
+	       (format t "~%~%Correct! (Solved in ~a tries)~%~%" tries)
+	       (return-from play tries))
 	      ((string= guess "q") (format t "~%~% Better luck next time!~%~%")
 	       (return-from play))
-	      (t (format t "~%~%Nope! Guess again")))))))
+	      (t
+	       (format t "~%~%Nope! Guess again")
+	       (unscramble scrambled solution (1- tries))))))))
