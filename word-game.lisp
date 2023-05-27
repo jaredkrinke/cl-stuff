@@ -105,7 +105,6 @@
 	 (solution (get-random (nth difficulty *bucketed-words*)))
 	 ;; TODO: Ensure not the same as solution!
 	 (scrambled (shuffle-string solution)))
-    (break)
     (format t "~%~%Unscramble the following word")
     (loop
       (format t " (enter 'q' to give up):~%~%  ~a~%~%> " scrambled)
