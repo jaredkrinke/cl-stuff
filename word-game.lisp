@@ -1,3 +1,11 @@
+(defpackage :thirteen-letters
+  (:documentation "Thirteen-letter word scramble game")
+  (:nicknames wg)
+  (:use :cl)
+  (:export #:play))
+
+(in-package :wg)
+
 ;;; General utility functions
 (defmacro map-each ((var sequence) &body body)
   "Map a sequence using an implicit anonymous function"
