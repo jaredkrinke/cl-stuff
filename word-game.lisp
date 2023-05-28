@@ -1,8 +1,9 @@
-(defpackage :thirteen-letters
+(defpackage :word-game
   (:documentation "Thirteen-letter word scramble game")
   (:nicknames wg)
   (:use :cl)
-  (:export #:play))
+  (:export #:play
+	   #:menu))
 
 (in-package :wg)
 
@@ -133,27 +134,44 @@
     (rotatef (aref scrambled index) (aref scrambled target))))
 
 (defun play (&optional (difficulty 0))
-  (let* ((tries 0)
-	 (solution (get-random (nth difficulty *bucketed-words*)))
+  "Play one round on the given difficulty level"
+  (let* ((solution (get-random (nth difficulty *bucketed-words*)))
 	 (scrambled (scramble solution)))
-    (format t "~%~%Unscramble the following word")
-    (loop
-      (format t
-	      " (or 'q' to give up):~%  ~a~a~%  ~a~%~%> "
-	      (char-repeat #\Space tries)
-	      (char-repeat #\_ (- *puzzle-length* tries))
-	      scrambled)
-      (incf tries)
-      (let* ((guess (read-line)))
-	(cond ((string= guess solution)
-	       (format t "~%~%Correct! (Solved in ~a tries)~%~%" tries)
-	       (return-from play tries))
-	      ((string= guess "q") (format t "~%~% Better luck next time!~%~%")
-	       (return-from play))
-	      (t
-	       (format t "~%~%Nope! Guess again")
-	       ;; TODO: Fail if unscrambling solves the puzzle
-	       (unscramble scrambled solution (1- tries))))))))
+    (loop for tries upfrom 0
+	  for attempt upfrom 1
+	  with continue = t
+	  with won = nil
+	  with preamble = "Unscramble the following word"
+	  while continue
+	  do (format t
+		     "~%~%~a, or enter 'q' to give up (attempt #~a):~%  ~a~a~%  ~a~%~%> "
+		     preamble
+		     attempt
+		     (char-repeat #\Space tries)
+		     (char-repeat #\_ (- *puzzle-length* tries))
+		     scrambled)
+	     (let* ((guess (read-line)))
+	       (cond ((string= guess solution)
+		      (format t
+			      "~%~%Correct! Solved on attempt ~a (difficulty ~a).~%~%"
+			      attempt
+			      (1+ difficulty))
+		      (setf continue nil)
+		      (setf won t))
+		     ((string= guess "q")
+		      (format t "~%~%Better luck next time!~%~%")
+		      (setf continue nil))
+		     ((string= scrambled solution)
+		      (format t "~%~%Too slow! Better luck next time!~%~%")
+		      (setf continue nil))
+		     (t
+		      (unscramble scrambled solution tries)
+		      (cond ((string= scrambled solution)
+			     (format t "~%~%Too slow! The correct answer was: ~a~%~%" solution)
+			     (setf continue nil))
+			    (t
+			     (format t "~%~%Nope! Guess again"))))))
+	  finally (return (and won tries)))))
 
 (defun menu ()
   "Show the title menu and prompt for difficulty level (or exit)"
@@ -163,7 +181,7 @@
 
  - Goal: Unscramble a thirteen-letter word in as few guesses as possible.
  - After each incorrect guess, one letter will be unscrambled.
- - There are ten difficulty levels (1 being the easiest and ~a the hardest)~%~%"
+ - There are ~a difficulty levels (1 being the easiest)~%~%"
 	  *difficulty-buckets*)
 
   (loop with continue = t
@@ -178,6 +196,6 @@
 		    (format t "~%~%So long!~%")
 		    (setf continue nil))
 		   (difficulty
-		    (play (1- difficulty))
+		    (play (1- difficulty)))
 		   (t
 		    (format t "~%Invalid input!~%"))))))
