@@ -82,3 +82,97 @@
   (or (and (> x y) 'first-is-bigger)
       (and (equal x y) 'numbers-are-the-same)
       'first-is-smaller))
+
+;;; Chapter 6
+(defun set-equal (x y)
+  (and (subsetp x y) (subsetp y x)))
+
+(defun proper-subset (x y)
+  (and (subsetp x y) (not (set-equal x y))))
+
+(defun right-side (x)
+  (rest (member '-vs- x)))
+
+(defun left-side (x)
+  (right-side (reverse x)))
+
+(defun count-common (x)
+  (length (intersection (left-side x) (right-side x))))
+
+(defun compare-features (x)
+  (list (count-common x) 'common 'features))
+
+(defun swap-first-last (x)
+  (let ((first (first x))
+	(last (last x))
+	(middle (nreverse (rest (reverse (rest x))))))
+    (append last middle (list first))))
+
+(defun rotate-left (x)
+  (append (rest x) (list (first x))))
+
+(defun rotate-right (x)
+  (append (last x) (butlast x)))
+
+(defparameter *rooms*
+  '((living-room
+     (north front-stairs)
+     (south dining-room)
+     (east kitchen))
+    (upstairs-bedroom
+     (west library)
+     (south front-stairs))
+    (dining-room
+     (north living-room)
+     (east pantry)
+     (west downstairs-bedroom))
+    (kitchen
+     (west living-room)
+     (south pantry))
+    (pantry
+     (north kitchen)
+     (west dining-room))
+    (downstairs-bedroom
+     (north back-stairs)
+     (east dining-room))
+    (back-stairs
+     (south downstairs-bedroom)
+     (north library))
+    (front-stairs
+     (north upstairs-bedroom)
+     (south living-room))
+    (library
+     (east upstairs-bedroom)
+     (south back-stairs))))
+
+(defun choices (room-name)
+  (cdr (assoc room-name *rooms*)))
+
+(defun look (direction room-name)
+  (second (assoc direction (choices room-name))))
+
+(defvar *location* 'pantry)
+
+(defun set-robbie-location (place)
+  (setf *location* place))
+
+(defun upstairsp (room-name)
+  (member room-name '(library upstairs-bedroom)))
+
+(defun onstairsp (room-name)
+  (member room-name '(front-stairs back-stairs)))
+
+(defun where ()
+  (append '(robbie is)
+	(if (onstairsp *location*)
+	    (list 'on 'the *location*)
+	    (list (if (upstairsp *location*) 'upstairs 'downstairs) 'in 'the *location*))))
+
+(defun move (direction)
+  (let ((destination (look direction *location*)))
+    (if destination
+	(progn (set-robbie-location destination) (where))
+	'(ouch! robbie hit a wall))))
+
+(defun royal-we (x)
+  (subst 'we 'i x))
