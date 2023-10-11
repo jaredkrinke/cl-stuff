@@ -176,3 +176,130 @@
 
 (defun royal-we (x)
   (subst 'we 'i x))
+
+;;; Chapter 7
+(defparameter *note-table*
+  (loop for note in '(c c-sharp d d-sharp e f f-sharp g g-sharp a a-sharp b)
+	for i upfrom 1
+	collect (list i note)))
+
+(defun note-names (numbers)
+  (mapcar (lambda (x) (cadr (assoc x *note-table*))) numbers))
+
+(defun note-number (name)
+  (let ((entry (find-if (lambda (x)
+			  (equal (second x) name))
+			*note-table*)))
+    (first entry)))
+
+(defun note-numbers (names)
+  (mapcar #'note-number names))
+
+(defun raise (n numbers)
+  (mapcar (lambda (x) (+ x n)) numbers))
+
+(defun normalize (x)
+  (cond ((> x 12) (- x 12))
+	((< x 1) (+ x 12))
+	(t x)))
+
+(defun transpose (n song)
+  (let* ((numbers (note-numbers song))
+	 (raised (raise n numbers))
+	 (normalized (mapcar #'normalize raised)))
+    (note-names normalized)))
+
+(defun rank (card)
+  (first card))
+
+(defun suit (card)
+  (second card))
+
+(defvar *hand* '((3 hearts)
+		 (5 clubs)
+		 (2 diamonds)
+		 (4 diamonds)
+		 (ace spades)))
+
+(defun count-suit (suit hand)
+  (count-if (lambda (card) (equal suit (suit card))) hand))
+
+(defvar *colors* '((clubs black)
+		   (diamons red)
+		   (hearts red)
+		   (spades black)))
+
+(defun color-of (card)
+  (second (assoc (suit card) *colors*)))
+
+(defun first-red (hand)
+  (find-if (lambda (card) (equal 'red (color-of card))) hand))
+
+(defun black-cards (hand)
+  (remove-if-not (lambda (card) (equal 'black (color-of card))) hand))
+
+(defun what-ranks (suit hand)
+  (mapcar #'rank (remove-if-not (lambda (card) (equal suit (suit card))) hand)))
+
+(defparameter *ranks* '(2 3 4 5 6 7 8 9 10 jack queen king ace))
+
+(defun higher-rank-p (a b)
+  (let* ((rank-a (rank a))
+	 (rank-b (rank b))
+	 (sublist-b (member rank-b *ranks*)))
+    (member rank-a (cdr sublist-b))))
+
+(defun high-card (hand)
+  (reduce (lambda (a b) (if (higher-rank-p a b) a b)) hand))
+
+(defun total-length (lists)
+  (reduce #'+ (mapcar #'length lists)))
+
+(defparameter *database* '((b1 shape brick)
+			   (b1 color green)
+			   (b1 size small)
+			   (b1 supported-by b2)
+			   (b1 supported-by b3)
+			   (b2 shape brick)
+			   (b2 color red)
+			   (b2 size small)
+			   (b2 supports b1)
+			   (b2 left-of b3)
+			   (b3 shape brick)
+			   (b3 color red)
+			   (b3 size small)
+			   (b3 supports b1)
+			   (b3 right-of b2)
+			   (b4 shape pyramid)
+			   (b4 color blue)
+			   (b4 size large)
+			   (b4 supported-by b5)
+			   (b5 shape cube)
+			   (b5 color green)
+			   (b5 size large)
+			   (b5 supports b4)
+			   (b6 shape brick)
+			   (b6 color purple)
+			   (b6 size large)))
+
+(defun match-element (a b)
+  (cond ((equal b '?) t)
+	(t (equal a b))))
+
+(defun match-triple (a b)
+  (every #'match-element a b))
+
+(defun fetch (pattern)
+  (remove-if-not (lambda (row) (match-triple row pattern)) *database*))
+
+(defun supporters (block)
+  (fetch (list '? 'supports block)))
+
+(defun desc1 (block)
+  (fetch (list block '? '?)))
+
+(defun desc2 (block)
+  (mapcar #'cdr (desc1 block)))
+
+(defun description (block)
+  (reduce #'append (desc2 block)))
