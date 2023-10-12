@@ -303,3 +303,40 @@
 
 (defun description (block)
   (reduce #'append (desc2 block)))
+
+;;; Chapter 8
+(defun laugh (n)
+  (cond ((<= n 0) nil)
+	(t (cons 'ha (laugh (1- n))))))
+
+(defun add-up (numbers)
+  (cond ((null numbers) 0)
+	(t (+ (first numbers) (add-up (rest numbers))))))
+
+(defun all-odd-p (numbers)
+  (cond ((null numbers) t)
+	(t (and (oddp (first numbers)) (all-odd-p (rest numbers))))))
+
+(defun rec-member (item sequence)
+  (cond ((null sequence) nil)
+	(t (if (equal item (first sequence)) sequence (rec-member item (rest sequence))))))
+
+(defun rec-assoc (item alist)
+  (cond ((null alist) nil)
+	(t (if (equal item (car (first alist)))
+	       (first alist)
+	       (rec-assoc item (rest alist))))))
+
+(defun rec-nth (n list)
+  (cond ((= 0 n) (car list))
+	(t (rec-nth (1- n) (cdr list)))))
+
+(defun add1 (x)
+  (1+ x))
+
+(defun sub1 (x)
+  (1- x))
+
+(defun rec-+ (x y)
+  (cond ((= y 0) x)
+	(t (rec-+ (add1 x) (sub1 y)))))
