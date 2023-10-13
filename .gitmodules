@@ -1,3 +1,9 @@
 [submodule "cl-micropm"]
 	path = cl-micropm
 	url = https://github.com/jaredkrinke/cl-micropm.git
+[submodule "deps/checkl"]
+	path = deps/checkl
+	url = https://github.com/rpav/CheckL.git
+[submodule "deps/marshal"]
+	path = deps/marshal
+	url = https://github.com/wlbr/cl-marshal.git
