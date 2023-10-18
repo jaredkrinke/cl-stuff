@@ -340,3 +340,277 @@
 (defun rec-+ (x y)
   (cond ((= y 0) x)
 	(t (rec-+ (add1 x) (sub1 y)))))
+
+(defun find-first-odd (l)
+  (cond ((null l) nil)
+	((oddp (first l)) (first l))
+	(t (find-first-odd (rest l)))))
+
+(defun last-element (x)
+  (cond ((atom (cdr x)) (car x))
+	(t (last-element (cdr x)))))
+
+;; (defun add-nums (n sum)
+;;   (cond ((zerop n) sum)
+;; 	(t (add-nums (1- n) (+ n sum)))))
+
+(defun add-nums (n)
+  (cond ((zerop n) 0)
+	(t (+ n (add-nums (1- n))))))
+
+(defun all-equal (x)
+  (cond ((null (cdr x)) t)
+	((equal (first x) (second x)) (all-equal (cdr x)))
+	(t nil)))
+
+(defun count-down (x)
+  (cond ((zerop x) nil)
+	(t (cons x (count-down (1- x))))))
+
+(defun recursive-assoc (item sequence)
+  (cond ((null sequence) nil)
+	((equal item (caar sequence)) (car sequence))
+	(t (recursive-assoc item (cdr sequence)))))
+
+(defun sum-numeric-elements (sequence)
+  (cond ((null sequence) 0)
+	((numberp (car sequence)) (+ (car sequence) (sum-numeric-elements (cdr sequence))))
+	(t (sum-numeric-elements (cdr sequence)))))
+
+(defun recursive-remove (f sequence)
+  (cond ((null sequence) nil)
+	((funcall f (car sequence)) (recursive-remove f (cdr sequence)))
+	(t (cons (car sequence) (recursive-remove f (cdr sequence))))))
+
+(defun recursive-intersection (a b)
+  (cond ((null a) nil)
+	((rec-member (car a) b) (cons (car a) (recursive-intersection (cdr a) b)))
+	(t (recursive-intersection (cdr a) b))))
+
+(defun count-cons (tree)
+  (cond ((atom tree) 0)
+	(t (+ 1
+	      (count-cons (car tree))
+	      (count-cons (cdr tree))))))
+
+(defun sum-tree (tree)
+  (cond ((numberp tree) tree)
+	((atom tree) 0)
+	(t (+ (sum-tree (car tree))
+	      (sum-tree (cdr tree))))))
+
+(defun my-subst (new old tree)
+  (cond ((atom tree) (if (equal tree old) new tree))
+	(t (cons (my-subst new old (car tree))
+		 (my-subst new old (cdr tree))))))
+
+(defun flatten (tree)
+  (cond ((null tree) nil)
+	((atom tree) (list tree))
+	(t (append (flatten (car tree))
+		   (flatten (cdr tree))))))
+
+(defun tree-depth (tree)
+  (cond ((atom tree) 0)
+	(t (+ 1 (max (tree-depth (car tree))
+		     (tree-depth (cdr tree)))))))
+
+(defun paren-depth (x)
+  (cond ((atom x) 0)
+	(t (max (+ 1 (paren-depth (car x)))
+		(paren-depth (cdr x))))))
+
+(defun count-up-internal (n max)
+  (cond ((>= n max) (list n))
+	(t (cons n (count-up-internal (1+ n) max)))))
+
+(defun count-up (max)
+  (count-up-internal 1 max))
+
+(defun count-up* (n)
+  (cond ((<= n 1) (list 1))
+	(t (append (count-up* (1- n)) (list n)))))
+
+(defun bury (item depth)
+  (cond ((<= depth 1) (list item))
+	(t (list (bury item (1- depth))))))
+
+(defun pairings (a b)
+  (cond ((atom a) nil)
+	(t (cons (list (first a) (first b))
+		 (pairings (cdr a) (cdr b))))))
+
+(defun sublists (list)
+  (cond ((atom list) nil)
+	(t (cons list (sublists (cdr list))))))
+
+(defun every-other (list)
+  (cond ((atom list) nil)
+	(t (cons (first list) (every-other (cddr list))))))
+
+(defun left-half-step (list n)
+  (cond ((< n 0) nil)
+	(t (cons (first list) (left-half-step (cdr list) (1- n))))))
+
+(defun left-half (list)
+  (left-half-step list (/ (length list) 2)))
+
+(defun merge-lists (a b)
+  (cond ((and (null a) (null b)) nil)
+	((or (null a) (< (first b) (first a))) (cons (first b) (merge-lists a (rest b))))
+	(t (cons (first a) (merge-lists (rest a) b)))))
+
+(defparameter *family* '((colin nil nil)
+			 (deirdre nil nil)
+			 (arthur nil nil)
+			 (kate nil nil)
+			 (frank nil nil)
+			 (linda nil nil)
+			 (suzanne colin deirdre)
+			 (bruce arthur kate)
+			 (charles arthur kate)
+			 (david arthur kate)
+			 (ellen arthur kate)
+			 (george frank linda)
+			 (hillary frank linda)
+			 (andre nil nil)
+			 (tamara bruce suzanne)
+			 (vincent bruce suzanne)
+			 (wanda nil nil)
+			 (ivan george ellen)
+			 (julie george ellen)
+			 (marie george ellen)
+			 (nigel andre hillary)
+			 (frederick nil tamara)
+			 (zelda vincent wanda)
+			 (joshua ivan wanda)
+			 (quentin nil nil)
+			 (robert quentin julie)
+			 (olivia nigel marie)
+			 (peter nigel marie)
+			 (erica nil nil)
+			 (yvette robert zelda)
+			 (diane peter erica)))
+
+(defun father (person)
+  (second (assoc person *family*)))
+
+(defun mother (person)
+  (third (assoc person *family*)))
+
+(defun parents (person)
+  (remove nil (rest (assoc person *family*))))
+
+(defun children-helper (person list)
+  (cond ((null person) nil)
+	((atom list) nil)
+	((or (equal person (second (first list)))
+	     (equal person (third (first list))))
+	 (cons (first (first list)) (children-helper person (rest list))))
+	(t (children-helper person (rest list)))))
+
+(defun children (person)
+  (children-helper person *family*))
+
+(defun siblings (person)
+  (let ((father (father person))
+	(mother (mother person)))
+    (set-difference (union (children father) (children mother))
+		    (list person))))
+
+(defun mapunion (f list)
+  (reduce #'union (mapcar f list)))
+
+(defun grandparents (person)
+  (mapunion #'parents (parents person)))
+
+(defun cousins (person)
+  (mapunion #'children (mapunion #'siblings (parents person))))
+
+(defun descended-from (young old)
+  (cond ((null young) nil)
+	((member old (parents young)) t)
+	(t (or (descended-from (father young) old)
+	       (descended-from (mother young) old)))))
+
+(defun ancestors (person)
+  (cond ((null person) nil)
+	(t (append (parents person)
+		   (ancestors (father person))
+		   (ancestors (mother person))))))
+
+(defun generation-gap-helper (person ancestor gap)
+  (cond ((null person) nil)
+	((equal person ancestor) gap)
+	(t (or (generation-gap-helper (father person) ancestor (1+ gap))
+	       (generation-gap-helper (mother person) ancestor (1+ gap))))))
+
+(defun generation-gap (person ancestor)
+  (generation-gap-helper person ancestor 0))
+
+(defun tr-count-up-helper (x max result)
+  (cond ((> x max) result)
+	(t (tr-count-up-helper (1+ x) max (cons x result)))))
+
+(defun tr-count-up (n)
+  (reverse (tr-count-up-helper 1 n nil)))
+
+(defun tr-factorial-helper (x result)
+  (cond ((<= x 1) result)
+	(t (tr-factorial-helper (1- x) (* x result)))))
+
+(defun tr-factorial (x)
+  (tr-factorial-helper x 1))
+
+(defun tr-union-helper (a b result)
+  (cond ((null a) result)
+	((member (first a) b) (tr-union-helper (rest a) b result))
+	(t (tr-union-helper (rest a) b (cons (first a) result)))))
+
+(defun tr-union (a b)
+  (tr-union-helper a b b))
+
+(defun tr-intersection-helper (a b result)
+  (cond ((null a) result)
+	((member (first a) b) (tr-intersection-helper (rest a) b (cons (first a) result)))
+	(t (tr-intersection-helper (rest a) b result))))
+
+(defun tr-intersection (a b)
+  (tr-intersection-helper a b nil))
+
+(defun tr-set-difference-helper (a b result)
+  (cond ((null a) result)
+	((member (first a) b) (tr-set-difference-helper (rest a) b result))
+	(t (tr-set-difference-helper (rest a) b (cons (first a) result)))))
+
+(defun tr-set-difference (a b)
+  (tr-set-difference-helper a b nil))
+
+(defun tree-find-if (f tree)
+  (cond ((null tree) nil)
+	((consp tree) (or (tree-find-if f (car tree))
+			  (tree-find-if f (cdr tree))))
+	((funcall f tree) tree)
+	(t nil)))
+
+(defun arithmetic-eval (expression)
+  (cond ((numberp expression) expression)
+	((listp expression) (funcall (second expression)
+				     (arithmetic-eval (first expression))
+				     (arithmetic-eval (third expression))))
+	(t (error "Unknown operator"))))
+
+(defun arithmetic-p (expression)
+  (cond ((numberp expression) t)
+	((listp expression) (and (= 3 (length expression))
+				 (arithmetic-p (first expression))
+				 (member (second expression) '(+ - / *))
+				 (arithmetic-p (third expression))))
+	(t nil)))
+
+(defun factor-tree (n)
+  (labels ((helper (n p)
+	     (cond ((equal n p) n)
+		   ((zerop (rem n p)) (list n p (helper (/ n p) p)))
+		   (t (helper n (+ p 1))))))
+    (helper n 2)))
