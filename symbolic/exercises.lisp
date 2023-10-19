@@ -614,3 +614,52 @@
 		   ((zerop (rem n p)) (list n p (helper (/ n p) p)))
 		   (t (helper n (+ p 1))))))
     (helper n 2)))
+
+;;; Chapter 9
+(defun space-over (n)
+  (cond ((zerop n) nil)
+	(t (format t " ")
+	   (space-over (1- n)))))
+
+(defun plot-one-point (plotting-string y-val)
+  (space-over y-val)
+  (format t "~a~%" plotting-string))
+
+(defun plot-points (plotting-string y-values)
+  (cond ((null y-values) nil)
+	(t (plot-one-point plotting-string (first y-values))
+	   (plot-points plotting-string (rest y-values)))))
+
+(defun generate (m n)
+  (cond ((> m n) nil)
+	(t (cons m (generate (1+ m) n)))))
+
+(defun make-graph ()
+  (let ((func (read)) ; Should input a symbol
+	(start (read))
+	(end (read))
+	(plotting-string (read)))
+    (plot-points plotting-string (mapcar func (generate start end)))))
+
+(defun dot-prin1 (x)
+  (cond ((null x) (format t "NIL"))
+	((atom x) (format t "~s" x))
+	(t (format t "(")
+	   (dot-prin1 (first x))
+	   (format t " . ")
+	   (dot-prin1 (rest x))
+	   (format t ")"))))
+
+(defun hybrid-prin1-list (x prefix)
+  (format t prefix)
+  (hybrid-prin1 (car x))
+  (hybrid-prin1-cdr (cdr x)))
+
+(defun hybrid-prin1-cdr (x)
+  (cond ((null x) (format t ")"))
+	((atom x) (format t " . ~s)" x))
+	(t (hybrid-prin1-list x " "))))
+
+(defun hybrid-prin1 (x)
+  (cond ((atom x) (format t "~s" x))
+	(t (hybrid-prin1-list x "("))))
