@@ -19,3 +19,54 @@
 [submodule "deps/usocket"]
 	path = deps/usocket
 	url = https://github.com/usocket/usocket.git
+[submodule "deps/hunchentoot"]
+	path = deps/hunchentoot
+	url = https://github.com/jaredkrinke/hunchentoot.git
+[submodule "deps/trivial-backtrace"]
+	path = deps/trivial-backtrace
+	url = https://github.com/gwkkwg/trivial-backtrace.git
+[submodule "deps/rfc2388"]
+	path = deps/rfc2388
+	url = https://github.com/jdz/rfc2388.git
+[submodule "deps/md5"]
+	path = deps/md5
+	url = https://github.com/pmai/md5.git
+[submodule "deps/trivial-gray-streams"]
+	path = deps/trivial-gray-streams
+	url = https://github.com/trivial-gray-streams/trivial-gray-streams.git
+[submodule "deps/flexi-streams"]
+	path = deps/flexi-streams
+	url = https://github.com/edicl/flexi-streams.git
+[submodule "deps/cl-ppcre"]
+	path = deps/cl-ppcre
+	url = https://github.com/edicl/cl-ppcre.git
+[submodule "deps/trivial-garbage"]
+	path = deps/trivial-garbage
+	url = https://github.com/trivial-garbage/trivial-garbage
+[submodule "deps/bordeaux-threads"]
+	path = deps/bordeaux-threads
+	url = https://github.com/sionescu/bordeaux-threads.git
+[submodule "deps/trivial-features"]
+	path = deps/trivial-features
+	url = https://github.com/trivial-features/trivial-features
+[submodule "deps/global-vars"]
+	path = deps/global-vars
+	url = https://github.com/lmj/global-vars.git
+[submodule "deps/alexandria"]
+	path = deps/alexandria
+	url = https://gitlab.common-lisp.net/alexandria/alexandria.git
+[submodule "deps/cl-fad"]
+	path = deps/cl-fad
+	url = https://github.com/edicl/cl-fad.git
+[submodule "deps/cl+ssl"]
+	path = deps/cl+ssl
+	url = https://github.com/cl-plus-ssl/cl-plus-ssl.git
+[submodule "deps/cffi"]
+	path = deps/cffi
+	url = https://github.com/cffi/cffi.git
+[submodule "deps/babel"]
+	path = deps/babel
+	url = https://github.com/cl-babel/babel.git
+[submodule "deps/chunga"]
+	path = deps/chunga
+	url = https://github.com/edicl/chunga.git
