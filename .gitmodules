@@ -13,3 +13,9 @@
 [submodule "deps/cl-base64"]
 	path = deps/cl-base64
 	url = https://github.com/darabi/cl-base64.git
+[submodule "deps/split-sequence"]
+	path = deps/split-sequence
+	url = https://github.com/sharplispers/split-sequence.git
+[submodule "deps/usocket"]
+	path = deps/usocket
+	url = https://github.com/usocket/usocket.git
