@@ -20,10 +20,18 @@
   (declare (ignore args))
   "")
 
+;;; Configure CL-WHO for HTML5
+(setf (cl-who:html-mode) :html5)
+(setf cl-who:*attribute-quote-char* #\")
+
 (defun output-string (string stream)
   "Writes a string and waits for it to be flushed"
   (write-string string stream)
   (finish-output stream))
+
+(defmacro output-format (stream format-string &rest rest)
+  "Writes a format string and waits for it to be flushed"
+  `(output-string (format nil ,format-string ,@rest) ,stream))
 
 (defun handle-not-found ()
   "Returns a 404 not found error"
@@ -38,23 +46,30 @@
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
   (let* ((binary-stream (hunchentoot:send-headers))
 	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8)))
-    (output-string "<!DOCTYPE html>
+    ;; TODO: Use CL-WHO and a subsequence for the start of output?
+    (output-format stream
+		   "~a~%~a"
+		   "<!DOCTYPE html>
 <html><head><style>
 .dynamic { display: none }
 .dynamic:last-of-type { display: block }
-</style></head><body>
-<div id=\"controls\"><iframe src=\"controls\"></iframe></div>
-<p class=\"dynamic\">Welcome!</p>" stream)
+</style></head><body>"
+		   (cl-who:with-html-output-to-string (s)
+		       (:div :id "controls"
+			     (:iframe :src "controls"))
+		     (:p :class "dynamic" "Welcome CL-WHO!")))
     (let ((action (calispel:? *test-channel*)))
-      (output-string (format nil "<p class=\"dynamic\">... to the site! (~a)</p>" action) stream))))
+      (output-string (cl-who:with-html-output-to-string (s)
+		       (:p :class "dynamic" (cl-who:fmt "... to the site! (WHO: ~a)" action)))
+		     stream))))
 
 (defun handle-controls ()
-  "<!DOCTYPE html><html><body>
-<form action=\"action\" method=\"post\">
-<input type=\"hidden\" name=\"action\" value=\"go\">
-<input type=\"submit\" value=\"Push me!\">
-</form>
-</body></html>")
+  (cl-who:with-html-output-to-string (s)
+    (:html
+     (:body
+      (:form :action "action" :method "post"
+	     (:input :type "hidden" :name "action" :value "go")
+	     (:input :type "submit" :value "Push me 2!"))))))
 
 (defun handle-action ()
   "Handles an incoming action request"
