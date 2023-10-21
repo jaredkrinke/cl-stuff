@@ -70,3 +70,6 @@
 [submodule "deps/chunga"]
 	path = deps/chunga
 	url = https://github.com/edicl/chunga.git
+[submodule "deps/jpl-queues"]
+	path = deps/jpl-queues
+	url = https://github.com/jaredkrinke/jpl-queues.git
