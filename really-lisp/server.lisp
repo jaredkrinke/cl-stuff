@@ -25,7 +25,16 @@
   (write-string string stream)
   (finish-output stream))
 
-(defmethod hunchentoot:acceptor-dispatch-request ((server server) request)
+(defun handle-not-found ()
+  "Returns a 404 not found error"
+  (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+)
+  "")
+
+;;; TODO: Per-player, obviously
+(defparameter *test-channel* (make-instance 'calispel:channel))
+
+(defun handle-root ()
+  "Handles a request to the root resource"
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
   (let* ((binary-stream (hunchentoot:send-headers))
 	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8)))
@@ -33,11 +42,34 @@
 <html><head><style>
 .dynamic { display: none }
 .dynamic:last-of-type { display: block }
-</style></head><body><p class=\"dynamic\">Welcome!</p>" stream)
-    (sleep 1)
-    (output-string "<p class=\"dynamic\">... to the site!</p>" stream)
-    (sleep 1)
-    (output-string "<p class=\"dynamic\">That is all.</p></body></html>" stream)))
+</style></head><body>
+<div id=\"controls\"><iframe src=\"controls\"></iframe></div>
+<p class=\"dynamic\">Welcome!</p>" stream)
+    (let ((action (calispel:? *test-channel*)))
+      (output-string (format nil "<p class=\"dynamic\">... to the site! (~a)</p>" action) stream))))
+
+(defun handle-controls ()
+  "<!DOCTYPE html><html><body>
+<form action=\"action\" method=\"post\">
+<input type=\"hidden\" name=\"action\" value=\"go\">
+<input type=\"submit\" value=\"Push me!\">
+</form>
+</body></html>")
+
+(defun handle-action ()
+  "Handles an incoming action request"
+  (calispel:! *test-channel* (hunchentoot:post-parameter "action"))
+  (handle-controls))
+
+(defparameter *dispatch-table* '(("/" handle-root)
+				 ("/controls" handle-controls)
+				 ("/action" handle-action)))
+
+(defmethod hunchentoot:acceptor-dispatch-request ((server server) request)
+  (let ((row (assoc (hunchentoot:script-name* request) *dispatch-table* :test 'equal)))
+    (if row
+	(funcall (second row))
+	(handle-not-found))))
 
 ;;; Server management
 (defvar *server* (make-instance 'server) "Instance of the server")
