@@ -73,3 +73,9 @@
 [submodule "deps/jpl-queues"]
 	path = deps/jpl-queues
 	url = https://github.com/jaredkrinke/jpl-queues.git
+[submodule "deps/jpl-util"]
+	path = deps/jpl-util
+	url = https://github.com/hawkir/cl-jpl-util.git
+[submodule "deps/calispel"]
+	path = deps/calispel
+	url = https://github.com/hawkir/calispel.git
