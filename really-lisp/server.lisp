@@ -41,6 +41,7 @@
     string))
 
 ;;; Game logic
+(defparameter *frame-period* 1)
 (defparameter *width* 30)
 (defparameter *height* 30)
 (defparameter *cells* '((:empty . "blue")
@@ -48,13 +49,20 @@
 			(:goal . "white")
 			(:wall . "gray")))
 
+(defvar *board* nil)
+(defvar *board-updates* nil)
+
 (defun create-board (&optional (width *width*) (height *height*))
   "Creates a two-dimensional array that represents the board, initialized to :empty"
   (make-array (list width height) :element-type 'symbol :initial-element :empty))
 
-(defmacro modify-board (place row column value)
-  "Queues a board update to the PLACE list"
-  `(pushnew (list ,row ,column ,value) ,place))
+(defun board-get (row column)
+  "Gets the value of the specified cell for the current board"
+  (aref *board* row column))
+
+(defun board-set (row column value)
+  "Queues a change in the value of the specified cell for the current board"
+  (pushnew (list row column value) *board-updates*))
 
 ;;; Calispel channels for propagating updates to game/request thread
 (defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
@@ -81,17 +89,19 @@
 (setf cl-who:*attribute-quote-char* #\")
 
 ;;; HTML output helpers
-(defun output-string (string stream)
+(defvar *stream* nil "The current chunked output stream")
+
+(defun output-string (string)
   "Writes a string and waits for it to be flushed"
-  (write-string string stream)
-  (finish-output stream))
+  (write-string string *stream*)
+  (finish-output *stream*))
 
-(defmacro output-html ((stream) &body body)
-  `(output-string (cl-who:with-html-output-to-string (s) ,@body) ,stream))
+(defmacro output-html (&body body)
+  `(output-string (cl-who:with-html-output-to-string (s) ,@body)))
 
-(defmacro output-format (stream format-string &rest rest)
+(defmacro output-format (format-string &rest rest)
   "Writes a format string and waits for it to be flushed"
-  `(output-string (format nil ,format-string ,@rest) ,stream))
+  `(output-string (format nil ,format-string ,@rest)))
 
 ;;; HTTP request handlers
 (defun handle-not-found ()
@@ -99,24 +109,21 @@
   (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+)
   "")
 
-(defun update-board (board updates)
+(defun update-board ()
   "Applies board modifications and returns code to apply the differences"
   (cl-who:with-html-output-to-string (s)
-  (loop for (row column value) in updates do
-    (unless (eql (aref board row column) value)
-      (setf (aref board row column) value)
+  (loop for (row column value) in *board-updates* do
+    (unless (eql (aref *board* row column) value)
+      (setf (aref *board* row column) value)
       (cl-who:htm
        (:style (cl-who:fmt ".s~a_~a { background-color: ~a }"
 			   row
 			   column
 			   (rest (assoc value *cells*)))))))))
 
-(defun run-instance (id stream channel)
-  "Runs the handler for an instance of the application"
-  (let ((board (create-board)))
+(defun output-start (id)
     ;; TODO: Use CL-WHO and a subsequence for the start of output?
-    (output-format stream
-		   "~a~%~a"
+    (output-format "~a~%~a"
 		   "<!DOCTYPE html>
 <html><head><style>
 .dynamic { display: none }
@@ -133,25 +140,36 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			 (:tr (loop for column from 0 upto (1- *width*) do
 			   (cl-who:htm
 			    (:td :class (format nil "s~a_~a" column row)
-				 "&nbsp;")))))))))
-    (loop for action = (calispel:? channel 0)
-	  until (equal action "quit") do
-	    (let ((updates nil)
-		  (html nil))
-	      (modify-board updates (random *width*) (random *height*) (if action :player :wall))
-	      (setf html (update-board board updates))
-	      (if (and html (> (length html) 0)) (output-string html stream)))
-	  (sleep 1))))
+				 "&nbsp;"))))))))))
+
+(defun run-instance (id channel)
+  "Runs the handler for an instance of the application"
+  (let ((*board* (create-board)))
+    (output-start id)
+    (loop with done = nil for *board-updates* = nil until done do
+      (sleep *frame-period*)
+      (loop for action = (calispel:? channel 0) while action do
+	(alexandria:switch (action :test 'equal)
+	  ("clockwise" (board-set (random *height*) (random *width*) :player))
+	  ("quit" (setf done t))))
+      (let ((html (update-board)))
+	(if (and html (> (length html) 0)) (output-string html))))))
+
+(defun make-unbounded-buffered-channel ()
+  "Creates a Calispel channel that uses an unbounded FIFO queue for buffering"
+  ;; Use an unbounded, buffered queue to store as many events as needed for processing
+  (make-instance 'calispel:channel
+		 :buffer (make-instance 'jpl-queues:unbounded-fifo-queue)))
 
 (defun handle-root ()
   "Handles a request to the root resource"
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
   (let* ((id (random-identifier))
 	 (binary-stream (hunchentoot:send-headers))
-	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8))
-	 (channel (make-instance 'calispel:channel)))
+	 (*stream* (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8))
+	 (channel (make-unbounded-buffered-channel)))
 	   (add-channel id channel)
-    (unwind-protect (run-instance id stream channel)
+    (unwind-protect (run-instance id channel)
       (remove-channel id))))
 
 (defun render-controls (id)
