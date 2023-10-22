@@ -73,6 +73,26 @@
   (with-channel-lock
     (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
 
+(defun run-instance (id stream channel)
+  "Runs the handler for an instance of the application"
+  ;; TODO: Use CL-WHO and a subsequence for the start of output?
+  (output-format stream
+		 "~a~%~a"
+		 "<!DOCTYPE html>
+<html><head><style>
+.dynamic { display: none }
+.dynamic:last-of-type { display: block }
+</style></head><body>"
+		 (cl-who:with-html-output-to-string (s)
+		   (:div :id "controls"
+			 (:iframe :src (format nil "controls?id=~a" id)))
+		   (:p :class "dynamic" "Welcome CL-WHO! " id)))
+  (loop for action = (calispel:? channel)
+	until (equal action "quit") do
+	  (output-string (cl-who:with-html-output-to-string (s)
+			   (:p :class "dynamic" (cl-who:fmt "... to the site! (WHO: ~a)" action)))
+			 stream)))
+
 (defun handle-root ()
   "Handles a request to the root resource"
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
@@ -80,33 +100,24 @@
 	 (binary-stream (hunchentoot:send-headers))
 	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8))
 	 (channel (make-instance 'calispel:channel)))
-    ;; TODO: Use CL-WHO and a subsequence for the start of output?
-    (output-format stream
-		   "~a~%~a"
-		   "<!DOCTYPE html>
-<html><head><style>
-.dynamic { display: none }
-.dynamic:last-of-type { display: block }
-</style></head><body>"
-		   (cl-who:with-html-output-to-string (s)
-		     (:div :id "controls"
-			   (:iframe :src (format nil "controls?id=~a" id)))
-		     (:p :class "dynamic" "Welcome CL-WHO! " id)))
-    (add-channel id channel)
-    (let ((action (calispel:? channel)))
-      (output-string (cl-who:with-html-output-to-string (s)
-		       (:p :class "dynamic" (cl-who:fmt "... to the site! (WHO: ~a)" action)))
-		     stream))
-    (remove-channel id)))
+	   (add-channel id channel)
+    (unwind-protect (run-instance id stream channel)
+      (remove-channel id))))
 
 (defun render-controls (id)
   (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
      (:body
-      (:form :action "action" :method "post"
-	     (:input :type "hidden" :name "id" :value id)
-	     (:input :type "hidden" :name "action" :value "go")
-	     (:input :type "submit" :value "Push me 2!"))))))
+      (loop for (label action) in '(("A" "a")
+				    ("B" "b")
+				    ("C" "c")
+				    ("D" "d")
+				    ("Quit" "quit"))
+	    do (cl-who:htm
+		(:form :action "action" :method "post"
+		       (:input :type "hidden" :name "id" :value id)
+		       (:input :type "hidden" :name "action" :value action)
+		       (:input :type "submit" :value label))))))))
 
 (defun handle-controls ()
   (render-controls (hunchentoot:parameter "id")))
@@ -118,7 +129,7 @@
 	 (channel (get-channel id)))
     (if channel
 	(progn
-	  (calispel:! channel (format nil "~a ~a" id action))
+	  (calispel:! channel action)
 	  (render-controls id))
 	(handle-not-found))))
 
