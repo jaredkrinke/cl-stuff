@@ -40,10 +40,12 @@
       (setf (char string x) (random-letter)))
     string))
 
-;;; Game logic
+;;; Game infrastructure
 (defparameter *frame-period* 1)
 (defparameter *width* 30)
 (defparameter *height* 30)
+(defparameter *actions* '(("clockwise" . :clockwise)
+			  ("quit" . :quit)))
 (defparameter *cells* '((:empty . "blue")
 			(:player . "yellow")
 			(:goal . "white")
@@ -51,6 +53,8 @@
 
 (defvar *board* nil)
 (defvar *board-updates* nil)
+(defvar *channel* nil)
+(defvar *done* nil)
 
 (defun create-board (&optional (width *width*) (height *height*))
   "Creates a two-dimensional array that represents the board, initialized to :empty"
@@ -63,6 +67,17 @@
 (defun board-set (row column value)
   "Queues a change in the value of the specified cell for the current board"
   (pushnew (list row column value) *board-updates*))
+
+(defun poll-event ()
+  "Polls for queued actions"
+  (let* ((action-string (calispel:? *channel* 0))
+	 (action (and action-string (or (rest (assoc action-string *actions* :test 'equal))
+					:unknown))))
+    action))
+
+(defun quit ()
+  "Quits the current instance of the game"
+  (setf *done* t))
 
 ;;; Calispel channels for propagating updates to game/request thread
 (defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
@@ -152,16 +167,17 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 
 (defun run-instance (id channel)
   "Runs the handler for an instance of the game"
-  (let ((*board* (create-board)))
+  (let* ((*board* (create-board))
+	 (*channel* channel)
+	 (*done* nil))
     (output-start id)
-    (loop with done = nil for *board-updates* = nil until done do
-      (sleep *frame-period*)
-      (loop for action = (calispel:? channel 0) while action do
-	(alexandria:switch (action :test 'equal)
-	  ("clockwise" (board-set (random *height*) (random *width*) :player))
-	  ("quit" (setf done t))))
-      (let ((html (update-board)))
-	(if (and html (> (length html) 0)) (output-string html))))))
+    (run-game)))
+
+(defmacro run-loop (&body body)
+  `(loop for *board-updates* = nil until *done* do
+	 ,@body
+	   (let ((html (update-board)))
+	     (if (and html (> (length html) 0)) (output-string html)))))
 
 (defun handle-root ()
   "Handles a request to the root resource"
@@ -210,6 +226,16 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
     (if row
 	(funcall (second row))
 	(handle-not-found))))
+
+;;; Game logic
+(defun run-game ()
+  "Runs the actual game logic"
+  (let ((q 5))
+    (run-loop
+      (loop for action = (poll-event) while action do
+	(case action
+	  (:clockwise (board-set (random *height*) q :player))
+	  (:quit (quit)))))))
 
 ;;; Server management
 (defvar *server* (make-instance 'server) "Instance of the server")
