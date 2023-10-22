@@ -21,6 +21,10 @@
   "")
 
 ;;; Utilities
+(defun char-to-string (character)
+  "Converts a character into a string"
+  (make-string 1 :initial-element character))
+
 (defun random-on-interval (min max)
   "Returns a random number on the interval [min, max]"
   (+ min (random (- max min))))
@@ -36,6 +40,22 @@
       (setf (char string x) (random-letter)))
     string))
 
+;;; Game logic
+(defparameter *width* 30)
+(defparameter *height* 30)
+(defparameter *cells* '((:empty . "blue")
+			(:player . "yellow")
+			(:goal . "white")
+			(:wall . "gray")))
+
+(defun create-board (&optional (width *width*) (height *height*))
+  "Creates a two-dimensional array that represents the board, initialized to :empty"
+  (make-array (list width height) :element-type 'symbol :initial-element :empty))
+
+(defmacro modify-board (place row column value)
+  "Queues a board update to the PLACE list"
+  `(pushnew (list ,row ,column ,value) ,place))
+
 ;;; Configure CL-WHO for HTML5
 (setf (cl-who:html-mode) :html5)
 (setf cl-who:*attribute-quote-char* #\")
@@ -44,6 +64,9 @@
   "Writes a string and waits for it to be flushed"
   (write-string string stream)
   (finish-output stream))
+
+(defmacro output-html ((stream) &body body)
+  `(output-string (cl-who:with-html-output-to-string (s) ,@body) ,stream))
 
 (defmacro output-format (stream format-string &rest rest)
   "Writes a format string and waits for it to be flushed"
@@ -73,25 +96,49 @@
   (with-channel-lock
     (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
 
+(defun update-board (board updates)
+  "Applies board modifications and returns code to apply the differences"
+  (cl-who:with-html-output-to-string (s)
+  (loop for (row column value) in updates do
+    (unless (eql (aref board row column) value)
+      (setf (aref board row column) value)
+      (cl-who:htm
+       (:style (cl-who:fmt ".s~a_~a { background-color: ~a }"
+			   row
+			   column
+			   (rest (assoc value *cells*)))))))))
+
 (defun run-instance (id stream channel)
   "Runs the handler for an instance of the application"
-  ;; TODO: Use CL-WHO and a subsequence for the start of output?
-  (output-format stream
-		 "~a~%~a"
-		 "<!DOCTYPE html>
+  (let ((board (create-board)))
+    ;; TODO: Use CL-WHO and a subsequence for the start of output?
+    (output-format stream
+		   "~a~%~a"
+		   "<!DOCTYPE html>
 <html><head><style>
 .dynamic { display: none }
 .dynamic:last-of-type { display: block }
+table { border-spacing: 0 }
+td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 </style></head><body>"
-		 (cl-who:with-html-output-to-string (s)
-		   (:div :id "controls"
-			 (:iframe :src (format nil "controls?id=~a" id)))
-		   (:p :class "dynamic" "Welcome CL-WHO! " id)))
-  (loop for action = (calispel:? channel)
-	until (equal action "quit") do
-	  (output-string (cl-who:with-html-output-to-string (s)
-			   (:p :class "dynamic" (cl-who:esc (cl-who:fmt "... to the site! (WHO: ~a)" action))))
-			 stream)))
+		   (cl-who:with-html-output-to-string (s)
+		     (:div :id "controls"
+			   (:iframe :src (format nil "controls?id=~a" id)))
+		     (:table
+		      (loop for row from 0 upto (1- *height*) do
+			(cl-who:htm
+			 (:tr (loop for column from 0 upto (1- *width*) do
+			   (cl-who:htm
+			    (:td :class (format nil "s~a_~a" column row)
+				 "&nbsp;")))))))))
+    (loop for action = (calispel:? channel 0)
+	  until (equal action "quit") do
+	    (let ((updates nil)
+		  (html nil))
+	      (modify-board updates (random *width*) (random *height*) (if action :player :wall))
+	      (setf html (update-board board updates))
+	      (if (and html (> (length html) 0)) (output-string html stream)))
+	  (sleep 1))))
 
 (defun handle-root ()
   "Handles a request to the root resource"
@@ -108,10 +155,7 @@
   (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
      (:body
-      (loop for (label action) in '(("A" "a")
-				    ("B" "b")
-				    ("C" "c")
-				    ("D" "d")
+      (loop for (label action) in `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise")
 				    ("Quit" "quit"))
 	    do (cl-who:htm
 		(:form :action "action" :method "post"
