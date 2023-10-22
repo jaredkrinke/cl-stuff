@@ -56,27 +56,7 @@
   "Queues a board update to the PLACE list"
   `(pushnew (list ,row ,column ,value) ,place))
 
-;;; Configure CL-WHO for HTML5
-(setf (cl-who:html-mode) :html5)
-(setf cl-who:*attribute-quote-char* #\")
-
-(defun output-string (string stream)
-  "Writes a string and waits for it to be flushed"
-  (write-string string stream)
-  (finish-output stream))
-
-(defmacro output-html ((stream) &body body)
-  `(output-string (cl-who:with-html-output-to-string (s) ,@body) ,stream))
-
-(defmacro output-format (stream format-string &rest rest)
-  "Writes a format string and waits for it to be flushed"
-  `(output-string (format nil ,format-string ,@rest) ,stream))
-
-(defun handle-not-found ()
-  "Returns a 404 not found error"
-  (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+)
-  "")
-
+;;; Calispel channels for propagating updates to game/request thread
 (defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
 (defvar *channels* nil "List of (channel-name . channel)")
 
@@ -95,6 +75,29 @@
 (defun remove-channel (id)
   (with-channel-lock
     (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
+
+;;; Configure CL-WHO for HTML5
+(setf (cl-who:html-mode) :html5)
+(setf cl-who:*attribute-quote-char* #\")
+
+;;; HTML output helpers
+(defun output-string (string stream)
+  "Writes a string and waits for it to be flushed"
+  (write-string string stream)
+  (finish-output stream))
+
+(defmacro output-html ((stream) &body body)
+  `(output-string (cl-who:with-html-output-to-string (s) ,@body) ,stream))
+
+(defmacro output-format (stream format-string &rest rest)
+  "Writes a format string and waits for it to be flushed"
+  `(output-string (format nil ,format-string ,@rest) ,stream))
+
+;;; HTTP request handlers
+(defun handle-not-found ()
+  "Returns a 404 not found error"
+  (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+)
+  "")
 
 (defun update-board (board updates)
   "Applies board modifications and returns code to apply the differences"
