@@ -20,6 +20,22 @@
   (declare (ignore args))
   "")
 
+;;; Utilities
+(defun random-on-interval (min max)
+  "Returns a random number on the interval [min, max]"
+  (+ min (random (- max min))))
+
+(defun random-letter ()
+  "Returns a random lower case (English) letter"
+  (code-char (random-on-interval (char-code #\a) (char-code #\z))))
+
+(defun random-identifier (&optional (length 12))
+  "Returns a random (12 character by default) identifier composed of lower case (English) letters"
+  (let ((string (make-string length)))
+    (dotimes (x length)
+      (setf (char string x) (random-letter)))
+    string))
+
 ;;; Configure CL-WHO for HTML5
 (setf (cl-who:html-mode) :html5)
 (setf cl-who:*attribute-quote-char* #\")
@@ -38,14 +54,32 @@
   (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+)
   "")
 
-;;; TODO: Per-player, obviously
-(defparameter *test-channel* (make-instance 'calispel:channel))
+(defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
+(defvar *channels* nil "List of (channel-name . channel)")
+
+(defmacro with-channel-lock (&body body)
+  `(bt:with-recursive-lock-held (*channels-lock*)
+     ,@body))
+
+(defun add-channel (id channel)
+  (with-channel-lock
+    (pushnew (cons id channel) *channels*)))
+
+(defun get-channel (id)
+  (with-channel-lock
+    (rest (assoc id *channels* :test 'equal))))
+
+(defun remove-channel (id)
+  (with-channel-lock
+    (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
 
 (defun handle-root ()
   "Handles a request to the root resource"
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
-  (let* ((binary-stream (hunchentoot:send-headers))
-	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8)))
+  (let* ((id (random-identifier))
+	 (binary-stream (hunchentoot:send-headers))
+	 (stream (flexi-streams:make-flexi-stream binary-stream :external-format :utf-8))
+	 (channel (make-instance 'calispel:channel)))
     ;; TODO: Use CL-WHO and a subsequence for the start of output?
     (output-format stream
 		   "~a~%~a"
@@ -55,26 +89,38 @@
 .dynamic:last-of-type { display: block }
 </style></head><body>"
 		   (cl-who:with-html-output-to-string (s)
-		       (:div :id "controls"
-			     (:iframe :src "controls"))
-		     (:p :class "dynamic" "Welcome CL-WHO!")))
-    (let ((action (calispel:? *test-channel*)))
+		     (:div :id "controls"
+			   (:iframe :src (format nil "controls?id=~a" id)))
+		     (:p :class "dynamic" "Welcome CL-WHO! " id)))
+    (add-channel id channel)
+    (let ((action (calispel:? channel)))
       (output-string (cl-who:with-html-output-to-string (s)
 		       (:p :class "dynamic" (cl-who:fmt "... to the site! (WHO: ~a)" action)))
-		     stream))))
+		     stream))
+    (remove-channel id)))
 
-(defun handle-controls ()
-  (cl-who:with-html-output-to-string (s)
+(defun render-controls (id)
+  (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
      (:body
       (:form :action "action" :method "post"
+	     (:input :type "hidden" :name "id" :value id)
 	     (:input :type "hidden" :name "action" :value "go")
 	     (:input :type "submit" :value "Push me 2!"))))))
 
+(defun handle-controls ()
+  (render-controls (hunchentoot:parameter "id")))
+
 (defun handle-action ()
   "Handles an incoming action request"
-  (calispel:! *test-channel* (hunchentoot:post-parameter "action"))
-  (handle-controls))
+  (let* ((id (hunchentoot:parameter "id"))
+	 (action (hunchentoot:parameter "action"))
+	 (channel (get-channel id)))
+    (if channel
+	(progn
+	  (calispel:! channel (format nil "~a ~a" id action))
+	  (render-controls id))
+	(handle-not-found))))
 
 (defparameter *dispatch-table* '(("/" handle-root)
 				 ("/controls" handle-controls)
