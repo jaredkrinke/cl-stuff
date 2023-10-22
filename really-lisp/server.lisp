@@ -68,6 +68,12 @@
 (defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
 (defvar *channels* nil "List of (channel-name . channel)")
 
+(defun make-unbounded-buffered-channel ()
+  "Creates a Calispel channel that uses an unbounded FIFO queue for buffering"
+  ;; Use an unbounded, buffered queue to store as many events as needed for processing
+  (make-instance 'calispel:channel
+		 :buffer (make-instance 'jpl-queues:unbounded-fifo-queue)))
+
 (defmacro with-channel-lock (&body body)
   `(bt:with-recursive-lock-held (*channels-lock*)
      ,@body))
@@ -97,6 +103,7 @@
   (finish-output *stream*))
 
 (defmacro output-html (&body body)
+  "Convert to HTML using CL-WHO and output"
   `(output-string (cl-who:with-html-output-to-string (s) ,@body)))
 
 (defmacro output-format (format-string &rest rest)
@@ -110,7 +117,7 @@
   "")
 
 (defun update-board ()
-  "Applies board modifications and returns code to apply the differences"
+  "Applies board modifications and returns HTML (actually mostly CSS) to apply the differences"
   (cl-who:with-html-output-to-string (s)
   (loop for (row column value) in *board-updates* do
     (unless (eql (aref *board* row column) value)
@@ -122,28 +129,29 @@
 			   (rest (assoc value *cells*)))))))))
 
 (defun output-start (id)
-    ;; TODO: Use CL-WHO and a subsequence for the start of output?
-    (output-format "~a~%~a"
-		   "<!DOCTYPE html>
+  "Outputs the start of the HTML page (including the game board and control frame)"
+  ;; TODO: Use CL-WHO and a subsequence for the start of output?
+  (output-format "~a~%~a"
+		 "<!DOCTYPE html>
 <html><head><style>
 .dynamic { display: none }
 .dynamic:last-of-type { display: block }
 table { border-spacing: 0 }
 td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 </style></head><body>"
-		   (cl-who:with-html-output-to-string (s)
-		     (:div :id "controls"
-			   (:iframe :src (format nil "controls?id=~a" id)))
-		     (:table
-		      (loop for row from 0 upto (1- *height*) do
-			(cl-who:htm
-			 (:tr (loop for column from 0 upto (1- *width*) do
-			   (cl-who:htm
-			    (:td :class (format nil "s~a_~a" column row)
-				 "&nbsp;"))))))))))
+		 (cl-who:with-html-output-to-string (s)
+		   (:div :id "controls"
+			 (:iframe :src (format nil "controls?id=~a" id)))
+		   (:table
+		    (loop for row from 0 upto (1- *height*) do
+		      (cl-who:htm
+		       (:tr (loop for column from 0 upto (1- *width*) do
+			 (cl-who:htm
+			  (:td :class (format nil "s~a_~a" column row)
+			       "&nbsp;"))))))))))
 
 (defun run-instance (id channel)
-  "Runs the handler for an instance of the application"
+  "Runs the handler for an instance of the game"
   (let ((*board* (create-board)))
     (output-start id)
     (loop with done = nil for *board-updates* = nil until done do
@@ -154,12 +162,6 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	  ("quit" (setf done t))))
       (let ((html (update-board)))
 	(if (and html (> (length html) 0)) (output-string html))))))
-
-(defun make-unbounded-buffered-channel ()
-  "Creates a Calispel channel that uses an unbounded FIFO queue for buffering"
-  ;; Use an unbounded, buffered queue to store as many events as needed for processing
-  (make-instance 'calispel:channel
-		 :buffer (make-instance 'jpl-queues:unbounded-fifo-queue)))
 
 (defun handle-root ()
   "Handles a request to the root resource"
@@ -173,6 +175,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
       (remove-channel id))))
 
 (defun render-controls (id)
+  "Render the contents of the controls frame"
   (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
      (:body
@@ -194,7 +197,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	 (channel (get-channel id)))
     (if channel
 	(progn
-	  (calispel:! channel action)
+	  (calispel:! channel action 0)
 	  (render-controls id))
 	(handle-not-found))))
 
@@ -212,9 +215,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 (defvar *server* (make-instance 'server) "Instance of the server")
 
 (defun start-server ()
-  "Runs the server"
   (hunchentoot:start *server*))
 
 (defun stop-server ()
-  "Stops the server"
   (hunchentoot:stop *server*))
