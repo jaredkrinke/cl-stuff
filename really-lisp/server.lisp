@@ -90,7 +90,7 @@
   (loop for action = (calispel:? channel)
 	until (equal action "quit") do
 	  (output-string (cl-who:with-html-output-to-string (s)
-			   (:p :class "dynamic" (cl-who:fmt "... to the site! (WHO: ~a)" action)))
+			   (:p :class "dynamic" (cl-who:esc (cl-who:fmt "... to the site! (WHO: ~a)" action))))
 			 stream)))
 
 (defun handle-root ()
@@ -115,7 +115,7 @@
 				    ("Quit" "quit"))
 	    do (cl-who:htm
 		(:form :action "action" :method "post"
-		       (:input :type "hidden" :name "id" :value id)
+		       (:input :type "hidden" :name "id" :value (cl-who:esc id))
 		       (:input :type "hidden" :name "action" :value action)
 		       (:input :type "submit" :value label))))))))
 
