@@ -195,13 +195,14 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
   (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
      (:body
-      (loop for (label action) in `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise")
-				    ("Quit" "quit"))
+      (loop for (label action access-key) in
+	    `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise" "d")
+	      ("Quit" "quit" "q"))
 	    do (cl-who:htm
 		(:form :action "action" :method "post"
 		       (:input :type "hidden" :name "id" :value (cl-who:esc id))
 		       (:input :type "hidden" :name "action" :value action)
-		       (:input :type "submit" :value label))))))))
+		       (:input :type "submit" :value label :accesskey access-key))))))))
 
 (defun handle-controls ()
   (render-controls (hunchentoot:parameter "id")))
@@ -236,27 +237,41 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			     (-1 0)
 			     (0 -1)))
 
+(defvar *position* nil)
+(defvar *direction* nil)
+
 (defun in-bounds (value min max)
   (and (>= value min)
        (<= value max)))
 
+(defun perform-action (action)
+  (case action
+    (:clockwise (setf *direction* (or (rest *direction*)
+				      *directions*)))
+    (:quit (quit))))
+
+(defun move-player ()
+  "Moves the player in the given direction"
+  (board-set (first *position*) (second *position*) :empty)
+  (setf *position* (mapcar #'+ *position* (first *direction*))))
+
+(defun resolve-player ()
+  "Checks to ensure the player is in bounds"
+  (if (every #'in-bounds *position* (first *bounds*) (second *bounds*))
+      (board-set (first *position*) (second *position*) :player)
+      (quit)))
+
 (defun run-game ()
   "Runs the actual game logic"
-  (let ((direction *directions*)
-	(position (list 10 10)))
+  (let ((*direction* *directions*)
+	(*position* (list 10 10)))
     (run-loop
       (sleep *frame-period*)
-      (loop for action = (poll-event) while action do
-	(case action
-	  (:clockwise (setf direction (or (rest direction)
-					  *directions*)))
-	  (:quit (quit))))
-      (board-set (first position) (second position) :empty)
-      (setf position (mapcar #'+ position (first direction)))
-      (if (every #'in-bounds position (first *bounds*) (second *bounds*))
-	  (progn
-	    (board-set (first position) (second position) :player))
-	  (quit)))))
+      (loop for action = (poll-event)
+	    while action
+	    do (perform-action action))
+      (move-player)
+      (resolve-player))))
 
 ;;; Server management
 (defvar *server* (make-instance 'server) "Instance of the server")
