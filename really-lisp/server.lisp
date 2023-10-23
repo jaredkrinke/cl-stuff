@@ -60,14 +60,14 @@
   "Creates a two-dimensional array that represents the board, initialized to :empty"
   (make-array (list height width) :element-type 'symbol :initial-element :empty))
 
-(defun board-get (row column)
+(defun board-get (position)
   "Gets the value of the specified cell for the current board"
-  (aref *board* row column))
+  (apply #'aref *board* position))
 
-(defun board-set (row column value)
+(defun board-set (position value)
   "Queues a change in the value of the specified cell for the current board"
   ;; TODO: Consider only queueing if different from most recent (incl. updates?)
-  (pushnew (list row column value) *board-updates*))
+  (pushnew (list position value) *board-updates*))
 
 (defun poll-event ()
   "Polls for queued actions"
@@ -135,13 +135,13 @@
 (defun update-board ()
   "Applies board modifications and returns HTML (actually mostly CSS) to apply the differences"
   (cl-who:with-html-output-to-string (s)
-  (loop for (row column value) in (nreverse *board-updates*) do
-    (unless (eql (aref *board* row column) value)
-      (setf (aref *board* row column) value)
+  (loop for (position value) in (nreverse *board-updates*) do
+    (unless (eql (apply #'aref *board* position) value)
+      (setf (apply #'aref *board* position) value)
       (cl-who:htm
        (:style (cl-who:fmt ".s~a_~a { background-color: ~a }"
-			   row
-			   column
+			   (first position)
+			   (second position)
 			   (rest (assoc value *cells*)))))))))
 
 (defun output-start (id)
@@ -277,7 +277,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	 (tail (last *snake*))
 	 (tail-position (first tail))
 	 (new-head-position (mapcar #'+ head-position (first *direction*))))
-    (board-set (first tail-position) (second tail-position) :empty)
+    (board-set tail-position :empty)
     (pushnew new-head-position *snake*)
     (setf *snake* (nbutlast *snake* 1))))
 
@@ -285,7 +285,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
   "Checks to ensure the player is in bounds"
   (let ((position (first *snake*)))
     (if (every #'in-bounds position (first *bounds*) (second *bounds*))
-	(board-set (first position) (second position) :player)
+	(board-set position :player)
 	(quit))))
 
 (defun run-game ()
