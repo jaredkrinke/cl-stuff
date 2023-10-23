@@ -41,7 +41,7 @@
     string))
 
 ;;; Game infrastructure
-(defparameter *frame-period* 1)
+(defparameter *frame-period* 1/3)
 (defparameter *width* 30)
 (defparameter *height* 30)
 (defparameter *actions* '(("clockwise" . :clockwise)
@@ -58,7 +58,7 @@
 
 (defun create-board (&optional (width *width*) (height *height*))
   "Creates a two-dimensional array that represents the board, initialized to :empty"
-  (make-array (list width height) :element-type 'symbol :initial-element :empty))
+  (make-array (list height width) :element-type 'symbol :initial-element :empty))
 
 (defun board-get (row column)
   "Gets the value of the specified cell for the current board"
@@ -134,7 +134,7 @@
 (defun update-board ()
   "Applies board modifications and returns HTML (actually mostly CSS) to apply the differences"
   (cl-who:with-html-output-to-string (s)
-  (loop for (row column value) in *board-updates* do
+  (loop for (row column value) in (nreverse *board-updates*) do
     (unless (eql (aref *board* row column) value)
       (setf (aref *board* row column) value)
       (cl-who:htm
@@ -158,11 +158,11 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 		   (:div :id "controls"
 			 (:iframe :src (format nil "controls?id=~a" id)))
 		   (:table
-		    (loop for row from 0 upto (1- *height*) do
+		    (loop for row from (1- *height*) downto 0 do
 		      (cl-who:htm
 		       (:tr (loop for column from 0 upto (1- *width*) do
 			 (cl-who:htm
-			  (:td :class (format nil "s~a_~a" column row)
+			  (:td :class (format nil "s~a_~a" row column)
 			       "&nbsp;"))))))))))
 
 (defun run-instance (id channel)
@@ -228,14 +228,35 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	(handle-not-found))))
 
 ;;; Game logic
+(defparameter *bounds* (list (list 0 0)
+			     (list (1- *height*) (1- *width*))))
+
+(defparameter *directions* '((1 0)
+			     (0 1)
+			     (-1 0)
+			     (0 -1)))
+
+(defun in-bounds (value min max)
+  (and (>= value min)
+       (<= value max)))
+
 (defun run-game ()
   "Runs the actual game logic"
-  (let ((q 5))
+  (let ((direction *directions*)
+	(position (list 10 10)))
     (run-loop
+      (sleep *frame-period*)
       (loop for action = (poll-event) while action do
 	(case action
-	  (:clockwise (board-set (random *height*) q :player))
-	  (:quit (quit)))))))
+	  (:clockwise (setf direction (or (rest direction)
+					  *directions*)))
+	  (:quit (quit))))
+      (board-set (first position) (second position) :empty)
+      (setf position (mapcar #'+ position (first direction)))
+      (if (every #'in-bounds position (first *bounds*) (second *bounds*))
+	  (progn
+	    (board-set (first position) (second position) :player))
+	  (quit)))))
 
 ;;; Server management
 (defvar *server* (make-instance 'server) "Instance of the server")
