@@ -240,6 +240,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			     (0 -1)))
 
 (defvar *snake* nil "Player's body, as a list of positions with the head being first")
+(defvar *goal-position* nil "Location of the goal")
 (defvar *direction* nil) ; TODO: *direction-cons*
 
 (defun in-bounds (value min max)
@@ -264,6 +265,12 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	while action
 	do (perform-action action)))
 
+(defun choose-goal-position ()
+  "Finds a place for a goal to spawn that isn't occupied"
+  (loop for position = (list (random *height*) (random *width*))
+	until (not (member position *snake* :test 'equal))
+	return position))
+
 (defun move-player ()
   "Moves the player in the given direction"
   (let* ((head-position (first *snake*))
@@ -284,7 +291,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 (defun run-game ()
   "Runs the actual game logic"
   (let ((*direction* *directions*)
-	(*snake* (loop for i from 1 to 3 collect (list 10 10))))
+	(*snake* (loop for i from 1 to 3 collect (list 10 10)))
+	(*goal-position* nil))
     (run-loop
       (sleep *frame-period*)
       (drain-actions)
