@@ -66,6 +66,7 @@
 
 (defun board-set (row column value)
   "Queues a change in the value of the specified cell for the current board"
+  ;; TODO: Consider only queueing if different from most recent (incl. updates?)
   (pushnew (list row column value) *board-updates*))
 
 (defun poll-event ()
@@ -238,8 +239,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			     (-1 0)
 			     (0 -1)))
 
-(defvar *position* nil)
-(defvar *direction* nil)
+(defvar *snake* nil "Player's body, as a list of positions with the head being first")
+(defvar *direction* nil) ; TODO: *direction-cons*
 
 (defun in-bounds (value min max)
   "Returns non-NIL if the value is within the range [min, max]"
@@ -265,19 +266,25 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 
 (defun move-player ()
   "Moves the player in the given direction"
-  (board-set (first *position*) (second *position*) :empty)
-  (setf *position* (mapcar #'+ *position* (first *direction*))))
+  (let* ((head-position (first *snake*))
+	 (tail (last *snake*))
+	 (tail-position (first tail))
+	 (new-head-position (mapcar #'+ head-position (first *direction*))))
+    (board-set (first tail-position) (second tail-position) :empty)
+    (pushnew new-head-position *snake*)
+    (setf *snake* (nbutlast *snake* 1))))
 
 (defun resolve-player ()
   "Checks to ensure the player is in bounds"
-  (if (every #'in-bounds *position* (first *bounds*) (second *bounds*))
-      (board-set (first *position*) (second *position*) :player)
-      (quit)))
+  (let ((position (first *snake*)))
+    (if (every #'in-bounds position (first *bounds*) (second *bounds*))
+	(board-set (first position) (second position) :player)
+	(quit))))
 
 (defun run-game ()
   "Runs the actual game logic"
   (let ((*direction* *directions*)
-	(*position* (list 10 10)))
+	(*snake* (loop for i from 1 to 3 collect (list 10 10))))
     (run-loop
       (sleep *frame-period*)
       (drain-actions)
