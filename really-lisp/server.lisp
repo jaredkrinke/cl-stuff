@@ -174,6 +174,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
     (run-game)))
 
 (defmacro run-loop (&body body)
+  "Runs logic as part of a loop, adding visual updates at the end"
   `(loop for *board-updates* = nil until *done* do
 	 ,@body
 	   (let ((html (update-board)))
@@ -196,8 +197,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
     (:html
      (:body
       (loop for (label action access-key) in
-	    `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise" "d")
-	      ("Quit" "quit" "q"))
+	    `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise" "e")
+	      ("Exit" "quit" "x"))
 	    do (cl-who:htm
 		(:form :action "action" :method "post"
 		       (:input :type "hidden" :name "id" :value (cl-who:esc id))
@@ -241,14 +242,26 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 (defvar *direction* nil)
 
 (defun in-bounds (value min max)
+  "Returns non-NIL if the value is within the range [min, max]"
   (and (>= value min)
        (<= value max)))
 
+(defun turn-clockwise ()
+  "Turns the player 90 degrees clockwise"
+  (setf *direction* (or (rest *direction*)
+			*directions*)))
+
 (defun perform-action (action)
+  "Perform an action (input event)"
   (case action
-    (:clockwise (setf *direction* (or (rest *direction*)
-				      *directions*)))
-    (:quit (quit))))
+    (:clockwise (turn-clockwise))
+    (:quit (quit)))) ; TODO: Consider removing this action
+
+(defun drain-actions ()
+  "Performs all queued actions"
+  (loop for action = (poll-event)
+	while action
+	do (perform-action action)))
 
 (defun move-player ()
   "Moves the player in the given direction"
@@ -267,9 +280,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	(*position* (list 10 10)))
     (run-loop
       (sleep *frame-period*)
-      (loop for action = (poll-event)
-	    while action
-	    do (perform-action action))
+      (drain-actions)
       (move-player)
       (resolve-player))))
 
