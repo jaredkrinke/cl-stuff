@@ -243,6 +243,15 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	(funcall (second row))
 	(handle-not-found))))
 
+;;; Server management
+(defvar *server* (make-instance 'server) "Instance of the server")
+
+(defun start-server ()
+  (hunchentoot:start *server*))
+
+(defun stop-server ()
+  (hunchentoot:stop *server*))
+
 ;;; Game logic
 (defparameter *bounds* (list (list 0 0)
 			     (list (1- *height*) (1- *width*))))
@@ -329,12 +338,3 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
       (if (not *goal-position*) (spawn-goal))
       (handle-actions)
       (update-player))))
-
-;;; Server management
-(defvar *server* (make-instance 'server) "Instance of the server")
-
-(defun start-server ()
-  (hunchentoot:start *server*))
-
-(defun stop-server ()
-  (hunchentoot:stop *server*))
