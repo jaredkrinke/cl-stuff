@@ -243,15 +243,23 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 (defvar *goal-position* nil "Location of the goal")
 (defvar *direction* nil) ; TODO: *direction-cons*
 
-(defun in-bounds (value min max)
+(defun in-range (value min max)
   "Returns non-NIL if the value is within the range [min, max]"
   (and (>= value min)
        (<= value max)))
+
+(defun in-bounds (position)
+  "Returns non-NIL if the position is in bounds"
+  (every #'in-range position (first *bounds*) (second *bounds*)))
 
 (defun turn-clockwise ()
   "Turns the player 90 degrees clockwise"
   (setf *direction* (or (rest *direction*)
 			*directions*)))
+
+(defun get-next-position ()
+  "Gets the player's next position"
+  (mapcar #'+ (first *snake*) (first *direction*)))
 
 (defun perform-action (action)
   "Perform an action (input event)"
@@ -259,7 +267,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
     (:clockwise (turn-clockwise))
     (:quit (quit)))) ; TODO: Consider removing this action
 
-(defun drain-actions ()
+(defun handle-actions ()
   "Performs all queued actions"
   (loop for action = (poll-event)
 	while action
@@ -269,35 +277,38 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
   "Finds a place for a goal to spawn that isn't occupied"
   (loop for position = (list (random *height*) (random *width*))
 	until (not (member position *snake* :test 'equal))
-	return position))
+	finally (return position)))
 
-(defun move-player ()
-  "Moves the player in the given direction"
-  (let* ((head-position (first *snake*))
-	 (tail (last *snake*))
-	 (tail-position (first tail))
-	 (new-head-position (mapcar #'+ head-position (first *direction*))))
-    (board-set tail-position :empty)
-    (pushnew new-head-position *snake*)
-    (setf *snake* (nbutlast *snake* 1))))
+(defun spawn-goal ()
+  "Spawns a new goal"
+  (setf *goal-position* (choose-goal-position))
+  (board-set *goal-position* :goal))
 
-(defun resolve-player ()
-  "Checks to ensure the player is in bounds"
-  (let ((position (first *snake*)))
-    (if (every #'in-bounds position (first *bounds*) (second *bounds*))
-	(board-set position :player)
+(defun update-player ()
+  "Moves the player in the given direction and resolves goal/end game events"
+  (let ((tail-position (first (last *snake*)))
+	(new-head-position (get-next-position)))
+    (if (and (in-bounds new-head-position)
+	     (not (member new-head-position *snake* :test 'equal)))
+	(progn
+	  (board-set tail-position :empty)
+	  (board-set new-head-position :player)
+	  (pushnew new-head-position *snake*)
+	  (if (equal new-head-position *goal-position*)
+	      (spawn-goal)
+	      (setf *snake* (nbutlast *snake* 1))))
 	(quit))))
 
 (defun run-game ()
   "Runs the actual game logic"
   (let ((*direction* *directions*)
-	(*snake* (loop for i from 1 to 3 collect (list 10 10)))
+	(*snake* (loop repeat 3 collect (list 10 10)))
 	(*goal-position* nil))
     (run-loop
       (sleep *frame-period*)
-      (drain-actions)
-      (move-player)
-      (resolve-player))))
+      (if (not *goal-position*) (spawn-goal))
+      (handle-actions)
+      (update-player))))
 
 ;;; Server management
 (defvar *server* (make-instance 'server) "Instance of the server")
