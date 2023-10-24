@@ -117,11 +117,8 @@
 (defun output-string (string)
   "Writes a string and waits for it to be flushed"
   (write-string string *stream*)
-  (finish-output *stream*))
-
-(defmacro output-html (&body body)
-  "Convert to HTML using CL-WHO and output"
-  `(output-string (cl-who:with-html-output-to-string (s) ,@body)))
+  (finish-output *stream*)
+  t)
 
 (defmacro output-format (format-string &rest rest)
   "Writes a format string and waits for it to be flushed"
@@ -192,7 +189,10 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
        (let ((html (concatenate 'string
 				(update-board)
 				(update-score *score*))))
-	 (if (and html (> (length html) 0)) (output-string html)))))
+	 (when (and html (> (length html) 0))
+	   ;; Ignore flush errors because the client probably just closed the connection
+	   (unless (ignore-errors (output-string html))
+	     (setf *done* t))))))
 
 (defun handle-root ()
   "Handles a request to the root resource"
