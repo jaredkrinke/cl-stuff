@@ -53,6 +53,7 @@
 
 (defvar *board* nil)
 (defvar *board-updates* nil)
+(defvar *previous-score* nil)
 (defvar *channel* nil)
 (defvar *done* nil)
 
@@ -135,14 +136,21 @@
 (defun update-board ()
   "Applies board modifications and returns HTML (actually mostly CSS) to apply the differences"
   (cl-who:with-html-output-to-string (s)
-  (loop for (position value) in (nreverse *board-updates*) do
-    (unless (eql (apply #'aref *board* position) value)
-      (setf (apply #'aref *board* position) value)
-      (cl-who:htm
-       (:style (cl-who:fmt ".s~a_~a { background-color: ~a }"
-			   (first position)
-			   (second position)
-			   (rest (assoc value *cells*)))))))))
+    (loop for (position value) in (nreverse *board-updates*) do
+      (unless (eql (apply #'aref *board* position) value)
+	(setf (apply #'aref *board* position) value)
+	(cl-who:htm
+	 (:style (cl-who:fmt ".s~a_~a { background-color: ~a }"
+			     (first position)
+			     (second position)
+			     (rest (assoc value *cells*)))))))))
+
+(defun update-score (new-score)
+  "Checks for score updates and returns HTML to apply any differences"
+  (unless (equal new-score *previous-score*)
+    (setf *previous-score* new-score)
+    (cl-who:with-html-output-to-string (s)
+      (:p :class "dynamic" (cl-who:fmt "Score: ~a" new-score)))))
 
 (defun output-start (id)
   "Outputs the start of the HTML page (including the game board and control frame)"
@@ -164,7 +172,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 		       (:tr (loop for column from 0 upto (1- *width*) do
 			 (cl-who:htm
 			  (:td :class (format nil "s~a_~a" row column)
-			       "&nbsp;"))))))))))
+			       "&nbsp;")))))))
+		   (:p :class "dynamic" "Score: 0"))))
 
 (defun run-instance (id channel)
   "Runs the handler for an instance of the game"
@@ -176,10 +185,14 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 
 (defmacro run-loop (&body body)
   "Runs logic as part of a loop, adding visual updates at the end"
-  `(loop for *board-updates* = nil until *done* do
-	 ,@body
-	   (let ((html (update-board)))
-	     (if (and html (> (length html) 0)) (output-string html)))))
+  `(loop
+     with *previous-score* = 0
+     for *board-updates* = nil until *done* do
+     ,@body
+       (let ((html (concatenate 'string
+				(update-board)
+				(update-score *score*))))
+	 (if (and html (> (length html) 0)) (output-string html)))))
 
 (defun handle-root ()
   "Handles a request to the root resource"
@@ -239,6 +252,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			     (-1 0)
 			     (0 -1)))
 
+(defvar *score* nil)
 (defvar *snake* nil "Player's body, as a list of positions with the head being first")
 (defvar *goal-position* nil "Location of the goal")
 (defvar *direction* nil) ; TODO: *direction-cons*
@@ -284,6 +298,11 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
   (setf *goal-position* (choose-goal-position))
   (board-set *goal-position* :goal))
 
+(defun capture-goal ()
+  "Increments score and spawns a new goal"
+  (incf *score*)
+  (spawn-goal))
+
 (defun update-player ()
   "Moves the player in the given direction and resolves goal/end game events"
   (let ((tail-position (first (last *snake*)))
@@ -295,13 +314,14 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	  (board-set new-head-position :player)
 	  (pushnew new-head-position *snake*)
 	  (if (equal new-head-position *goal-position*)
-	      (spawn-goal)
+	      (capture-goal)
 	      (setf *snake* (nbutlast *snake* 1))))
 	(quit))))
 
 (defun run-game ()
   "Runs the actual game logic"
-  (let ((*direction* *directions*)
+  (let ((*score* 0)
+	(*direction* *directions*)
 	(*snake* (loop repeat 3 collect (list 10 10)))
 	(*goal-position* nil))
     (run-loop
