@@ -154,7 +154,7 @@
   ;; TODO: Use CL-WHO and a subsequence for the start of output?
   (output-format "~a~%~a"
 		 "<!DOCTYPE html>
-<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\" /><link rel=\"stylesheet\" href=\"style.css\"></head><body><main>"
+<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\" /><link rel=\"stylesheet\" href=\"style.css\"></head><body><main class=\"text\">"
 		 (cl-who:with-html-output-to-string (s)
 		   (:div :id "controls"
 			 (:iframe :src (format nil "controls?id=~a" id)))
@@ -254,19 +254,21 @@
   "Handles a request for the CSS stylesheet"
   (setf (hunchentoot:content-type*) "text/css")
   "
-body { margin: 0; padding: 0; font-family: sans-serif; background-color: darkblue; color: #eee; }
+body { margin: 0; padding: 0; font-family: sans-serif; background-color: darkblue; color: #eee; line-height: 1.5; }
 h1 { color: yellow; }
 h1, h2 { text-align: center; }
 a:link, a:visited, a:hover { color: goldenrod; }
 main { max-width: 30em; margin: auto; }
+main.text { padding: 0.5 em; }
+li { padding: 0.25em 0; }
 
 .score { display: none }
 .score { font-weight: bold; font-size: 200%; }
 .score:last-of-type { display: block }
 table { border-spacing: 0; margin: auto; }
-td { background-color: blue; width: 1em; height: 1em; padding: 0; }
+td { background-color: blue; width: 1em; height: 1em; padding: 0; line-height: 1; }
 
-iframe { position: fixed; bottom: 0; left: 0; width: 100%; border: none; }
+iframe { position: fixed; bottom: 0; width: 100%; max-width: 30em; border: none; }
 form { position: absolute; top: 0; left: 0; width: 100%; height: 100% ;}
 input[type=submit] { width: 100%; height: 100%; font-size: 400%; font-weight: bold; background-color: blue; color: yellow;cursor: pointer; border: 3px solid yellow; }
 input[type=submit]:active { background-color: #0808ff; }
@@ -287,7 +289,7 @@ input[type=submit]:active { background-color: #0808ff; }
 	    (:li (:strong "The goal is to consume as many pieces of food as possible."))
 	    (:li "Each morsel causes the snake to grow.")
 	    (:li "The snake must stay in bounds and avoid running into itself.")))
-       (:p "This is an unoriginal concept, but there's a obnoxious twist: " (:strong "you can only turn clockwise") ".")
+       (:p "This is an unoriginal concept, but there's an obnoxious twist: " (:strong "you can only turn clockwise") ".")
        (:p "Note: the motivation for this game was to see if it was possible to create an arcade-style, browser-based game using only HTML and CSS. The game " (:em "does not") " require JavaScript (or WebAssembly).")
        (:h2 (:a :href "game" "Click here to start!")))))))
 
