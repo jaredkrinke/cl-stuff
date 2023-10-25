@@ -261,12 +261,16 @@ a:link, a:visited, a:hover { color: goldenrod; }
 main { max-width: 30em; margin: auto; }
 main.text { padding: 0.5 em; }
 li { padding: 0.25em 0; }
+ul.scores { padding: 0; }
+ul.scores li { list-style: none; text-align: center; padding: 0.125em; line-height: 1; font-size: 150%; }
 
 .score { display: none }
 .score { font-weight: bold; font-size: 200%; }
 .score:last-of-type { display: block }
 table { border-spacing: 0; margin: auto; }
 td { background-color: blue; width: 1em; height: 1em; padding: 0; line-height: 1; }
+
+.box { position: absolute; width: 30em; max-width: 100%; top: 1.5em; background-color: #0808ff; margin: 0; outline: 2px solid goldenrod; }
 
 iframe { position: fixed; bottom: 0; width: 100%; max-width: 30em; border: none; }
 form { position: absolute; top: 0; left: 0; width: 100%; height: 100% ;}
@@ -292,6 +296,23 @@ input[type=submit]:active { background-color: #0808ff; }
        (:p "This is an unoriginal concept, but there's an obnoxious twist: " (:strong "you can only turn clockwise") ".")
        (:p "Note: the motivation for this game was to see if it was possible to create an arcade-style, browser-based game using only HTML and CSS. The game " (:em "does not") " require JavaScript (or WebAssembly).")
        (:h2 (:a :href "game" "Click here to start!")))))))
+
+(defun render-game-over (score)
+  (cl-who:with-html-output-to-string (s)
+    (:div :class "box"
+	  (:h1 "Game Over!")
+	  (:h2 "Score: " (cl-who:fmt "~a" score))
+	  ;; (:h2 "High Scores")
+	  ;; (:ul :class "scores"
+	  ;;      (:li "10") ; TODO
+	  ;;      (:li "10")
+	  ;;      (:li "10")
+	  ;;      (:li "10")
+	  ;;      (:li "10")
+	  ;;      (:li "10")
+	  ;;      (:li "10")
+	  ;;      (:li "10"))
+	  (:h2 (:a :href "game" "Click to play again")))))
 
 ;;; Game logic
 (defparameter *bounds* (list (list 0 0)
@@ -372,10 +393,11 @@ input[type=submit]:active { background-color: #0808ff; }
   "Runs the actual game logic"
   (let ((*score* 0)
 	(*direction* *directions*)
-	(*snake* (loop repeat 3 collect (list 10 10)))
+	(*snake* (loop repeat 3 collect (list 14 14)))
 	(*goal-position* nil))
     (run-loop
       (sleep *frame-period*)
       (if (not *goal-position*) (spawn-goal))
       (handle-actions)
-      (update-player))))
+      (update-player))
+    (output-string (render-game-over *score*))))
