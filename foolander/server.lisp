@@ -299,21 +299,52 @@ input[type=submit]:active { background-color: #0808ff; }
        (:p "Note: the motivation for this game was to see if it was possible to create an arcade-style, browser-based game using only HTML and CSS. The game " (:em "does not") " require JavaScript (or WebAssembly).")
        (:h2 (:a :href "game" "Click here to start!")))))))
 
+;;; High score management
+(defparameter *high-scores-count* 8)
+
+(defvar *high-scores-lock* (bt:make-recursive-lock))
+(defvar *high-scores* nil)
+
+(defun high-scores-load-under-lock ()
+  "Loads high scores list from disk (must be called under lock)"
+  (setf *high-scores*
+	(with-open-file (stream "scores.txt" :if-does-not-exist nil)
+	  (if stream
+	      (make-array *high-scores-count*
+			  :element-type 'integer
+			  :initial-contents (read stream))
+	      (loop repeat *high-scores-count* collect 0)))))
+
+(defun high-scores-get-under-lock ()
+  "Returns a list of high scores (must be called under lock)"
+  (loop for score across *high-scores* collect score))
+
+(defun high-scores-save-under-lock ()
+  "Saves the high scores list to disk (must be called under lock)"
+  (with-open-file (stream "scores.txt" :direction :output
+				       :if-exists :supersede)
+    (print (high-scores-get-under-lock) stream)))
+
+(defun high-scores-add (score)
+  "Adds a new score to the list"
+  (bt:with-recursive-lock-held (*high-scores-lock*)
+    (unless *high-scores* (high-scores-load-under-lock))
+    (let ((last-index (1- (length *high-scores*))))
+      (when (> score (elt *high-scores* last-index))
+	(setf (aref *high-scores* last-index) score)
+	(setf *high-scores* (sort *high-scores* #'>))
+	(high-scores-save-under-lock))
+      (loop for score across *high-scores* collect score))))
+
 (defun render-game-over (score)
   (cl-who:with-html-output-to-string (s)
     (:div :class "box"
 	  (:h1 "Game Over!")
 	  (:h2 "Score: " (cl-who:fmt "~a" score))
-	  ;; (:h2 "High Scores")
-	  ;; (:ul :class "scores"
-	  ;;      (:li "10") ; TODO
-	  ;;      (:li "10")
-	  ;;      (:li "10")
-	  ;;      (:li "10")
-	  ;;      (:li "10")
-	  ;;      (:li "10")
-	  ;;      (:li "10")
-	  ;;      (:li "10"))
+	  (:h2 "High Scores")
+	  (:ul :class "scores"
+	       (loop for score in (high-scores-add score)
+		     do (cl-who:htm (:li (cl-who:fmt "~a" score)))))
 	  (:h2 (:a :href "game" "Click to play again")))))
 
 ;;; Game logic
