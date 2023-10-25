@@ -5,23 +5,6 @@
 
 (in-package :foolander)
 
-(defparameter *port* 23115 "Port on which the server should listen")
-
-(defclass server (hunchentoot:acceptor)
-  ()
-  (:documentation "Minimal HTTP server that only serves programmatic content")
-  (:default-initargs
-   :address "127.0.0.1"
-   :port *port*
-   :document-root nil
-   :error-template-directory nil
-   :access-log-destination nil))
-
-;;; Disable Hunchentoot default status messages
-(defmethod hunchentoot:acceptor-status-message ((acceptor server) http-status-code &rest args)
-  (declare (ignore args))
-  "")
-
 ;;; Utilities
 (defun char-to-string (character)
   "Converts a character into a string"
@@ -41,6 +24,58 @@
     (dotimes (x length)
       (setf (char string x) (random-letter)))
     string))
+
+;;; HTTP server configuration
+(defparameter *port* 23115 "Port on which the server should listen")
+
+(defclass server (hunchentoot:acceptor)
+  ()
+  (:documentation "Minimal HTTP server that only serves programmatic content")
+  (:default-initargs
+   :address "127.0.0.1"
+   :port *port*
+   :document-root nil
+   :error-template-directory nil
+   :access-log-destination nil))
+
+(defmethod hunchentoot:acceptor-status-message ((acceptor server) http-status-code &rest args)
+  (declare (ignore args))
+  "") ; Disable Hunchentoot default status messages
+
+;;; Server management
+(defvar *server* (make-instance 'server) "Instance of the server")
+
+(defun start-server ()
+  (hunchentoot:start *server*))
+
+(defun stop-server ()
+  (hunchentoot:stop *server*))
+
+;;; Calispel channels for propagating updates to game/request thread
+(defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
+(defvar *channels* nil "List of (channel-name . channel)")
+
+(defun make-unbounded-buffered-channel ()
+  "Creates a Calispel channel that uses an unbounded FIFO queue for buffering"
+  ;; Use an unbounded, buffered queue to store as many events as needed for processing
+  (make-instance 'calispel:channel
+		 :buffer (make-instance 'jpl-queues:unbounded-fifo-queue)))
+
+(defmacro with-channel-lock (&body body)
+  `(bt:with-recursive-lock-held (*channels-lock*)
+     ,@body))
+
+(defun add-channel (id channel)
+  (with-channel-lock
+    (pushnew (cons id channel) *channels*)))
+
+(defun get-channel (id)
+  (with-channel-lock
+    (rest (assoc id *channels* :test 'equal))))
+
+(defun remove-channel (id)
+  (with-channel-lock
+    (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
 
 ;;; Game infrastructure
 (defparameter *frame-period* 1/3)
@@ -82,32 +117,6 @@
 (defun quit ()
   "Quits the current instance of the game"
   (setf *done* t))
-
-;;; Calispel channels for propagating updates to game/request thread
-(defvar *channels-lock* (bt:make-recursive-lock) "Lock for *CHANNELS*")
-(defvar *channels* nil "List of (channel-name . channel)")
-
-(defun make-unbounded-buffered-channel ()
-  "Creates a Calispel channel that uses an unbounded FIFO queue for buffering"
-  ;; Use an unbounded, buffered queue to store as many events as needed for processing
-  (make-instance 'calispel:channel
-		 :buffer (make-instance 'jpl-queues:unbounded-fifo-queue)))
-
-(defmacro with-channel-lock (&body body)
-  `(bt:with-recursive-lock-held (*channels-lock*)
-     ,@body))
-
-(defun add-channel (id channel)
-  (with-channel-lock
-    (pushnew (cons id channel) *channels*)))
-
-(defun get-channel (id)
-  (with-channel-lock
-    (rest (assoc id *channels* :test 'equal))))
-
-(defun remove-channel (id)
-  (with-channel-lock
-    (setf *channels* (delete-if (lambda (row) (equal id (first row))) *channels*))))
 
 ;;; Configure CL-WHO for HTML5
 (setf (cl-who:html-mode) :html5)
@@ -241,15 +250,6 @@
     (if row
 	(funcall (second row))
 	(handle-not-found))))
-
-;;; Server management
-(defvar *server* (make-instance 'server) "Instance of the server")
-
-(defun start-server ()
-  (hunchentoot:start *server*))
-
-(defun stop-server ()
-  (hunchentoot:stop *server*))
 
 ;;; Game content
 (defun handle-style ()
