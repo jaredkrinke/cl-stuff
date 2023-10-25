@@ -1,9 +1,9 @@
-(defpackage really-lisp/server
+(defpackage :foolander
   (:use :cl)
   (:export #:start-server
-	  #:stop-server))
+	   #:stop-server))
 
-(in-package :really-lisp/server)
+(in-package :foolander)
 
 (defparameter *port* 23115 "Port on which the server should listen")
 

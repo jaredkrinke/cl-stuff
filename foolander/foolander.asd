@@ -1,4 +1,4 @@
-(asdf:defsystem #:really-lisp
+(asdf:defsystem #:foolander
   :depends-on (#:calispel
 	       #:cl-who
 	       #:hunchentoot)
