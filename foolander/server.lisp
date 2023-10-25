@@ -1,5 +1,7 @@
 (defpackage really-lisp/server
-  (:use :cl))
+  (:use :cl)
+  (:export #:start-server
+	  #:stop-server))
 
 (in-package :really-lisp/server)
 
