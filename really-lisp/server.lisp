@@ -147,19 +147,14 @@
   (unless (equal new-score *previous-score*)
     (setf *previous-score* new-score)
     (cl-who:with-html-output-to-string (s)
-      (:p :class "dynamic" (cl-who:fmt "Score: ~a" new-score)))))
+      (:p :class "score" (cl-who:fmt "Score: ~a" new-score)))))
 
 (defun output-start (id)
   "Outputs the start of the HTML page (including the game board and control frame)"
   ;; TODO: Use CL-WHO and a subsequence for the start of output?
   (output-format "~a~%~a"
 		 "<!DOCTYPE html>
-<html><head><style>
-.dynamic { display: none }
-.dynamic:last-of-type { display: block }
-table { border-spacing: 0 }
-td { background-color: blue; width: 1em; height: 1em; padding: 0; }
-</style></head><body>"
+<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\" /><link rel=\"stylesheet\" href=\"style.css\"></head><body><main>"
 		 (cl-who:with-html-output-to-string (s)
 		   (:div :id "controls"
 			 (:iframe :src (format nil "controls?id=~a" id)))
@@ -170,7 +165,7 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 			 (cl-who:htm
 			  (:td :class (format nil "s~a_~a" row column)
 			       "&nbsp;")))))))
-		   (:p :class "dynamic" "Score: 0"))))
+		   (:p :class "score" "Score: 0"))))
 
 (defun run-instance (id channel)
   "Runs the handler for an instance of the game"
@@ -194,8 +189,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	   (unless (ignore-errors (output-string html))
 	     (setf *done* t))))))
 
-(defun handle-root ()
-  "Handles a request to the root resource"
+(defun handle-main ()
+  "Handles a request to the main resource"
   (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
   (let* ((id (random-identifier))
 	 (binary-stream (hunchentoot:send-headers))
@@ -209,10 +204,10 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
   "Render the contents of the controls frame"
   (cl-who:with-html-output-to-string (s nil :prologue t)
     (:html
+     (:head (:link :rel "stylesheet" :href "style.css"))
      (:body
       (loop for (label action access-key) in
-	    `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise" "e")
-	      ("Exit" "quit" "x"))
+	    `((,(char-to-string #\Clockwise_Open_Circle_Arrow) "clockwise" "e"))
 	    do (cl-who:htm
 		(:form :action "action" :method "post"
 		       (:input :type "hidden" :name "id" :value (cl-who:esc id))
@@ -234,6 +229,8 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 	(handle-not-found))))
 
 (defparameter *dispatch-table* '(("/" handle-root)
+				 ("/game" handle-main)
+				 ("/style.css" handle-style)
 				 ("/controls" handle-controls)
 				 ("/action" handle-action)))
 
@@ -251,6 +248,48 @@ td { background-color: blue; width: 1em; height: 1em; padding: 0; }
 
 (defun stop-server ()
   (hunchentoot:stop *server*))
+
+;;; Game content
+(defun handle-style ()
+  "Handles a request for the CSS stylesheet"
+  (setf (hunchentoot:content-type*) "text/css")
+  "
+body { margin: 0; padding: 0; font-family: sans-serif; background-color: darkblue; color: #eee; }
+h1 { color: yellow; }
+h1, h2 { text-align: center; }
+a:link, a:visited, a:hover { color: goldenrod; }
+main { max-width: 30em; margin: auto; }
+
+.score { display: none }
+.score { font-weight: bold; font-size: 200%; }
+.score:last-of-type { display: block }
+table { border-spacing: 0; margin: auto; }
+td { background-color: blue; width: 1em; height: 1em; padding: 0; }
+
+iframe { position: fixed; bottom: 0; left: 0; width: 100%; border: none; }
+form { position: absolute; top: 0; left: 0; width: 100%; height: 100% ;}
+input[type=submit] { width: 100%; height: 100%; font-size: 400%; font-weight: bold; background-color: blue; color: yellow;cursor: pointer; border: 3px solid yellow; }
+input[type=submit]:active { background-color: #0808ff; }
+")
+
+(defun handle-root ()
+  "Handles a request to the root resource, with info and a link to play the game"
+  (cl-who:with-html-output-to-string (s nil :prologue t)
+    (:html
+     (:head
+      (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
+      (:link :rel "stylesheet" :href "style.css"))
+     (:body
+      (:main
+       (:h1 "Foolander")
+       (:p "Foolander is a simple snake game:"
+	   (:ul
+	    (:li (:strong "The goal is to consume as many pieces of food as possible."))
+	    (:li "Each morsel causes the snake to grow.")
+	    (:li "The snake must stay in bounds and avoid running into itself.")))
+       (:p "This is an unoriginal concept, but there's a obnoxious twist: " (:strong "you can only turn clockwise") ".")
+       (:p "Note: the motivation for this game was to see if it was possible to create an arcade-style, browser-based game using only HTML and CSS. The game " (:em "does not") " require JavaScript (or WebAssembly).")
+       (:h2 (:a :href "game" "Click here to start!")))))))
 
 ;;; Game logic
 (defparameter *bounds* (list (list 0 0)
