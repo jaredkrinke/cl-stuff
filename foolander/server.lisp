@@ -278,6 +278,10 @@ iframe { position: fixed; bottom: 0; width: 100%; max-width: 30em; border: none;
 form { position: absolute; top: 0; left: 0; width: 100%; height: 100% ;}
 input[type=submit] { width: 100%; height: 100%; font-size: 400%; font-weight: bold; background-color: blue; color: yellow;cursor: pointer; border: 3px solid yellow; }
 input[type=submit]:active { background-color: #0808ff; }
+
+@media (max-height: 40em) {
+ body { font-size: 85%; }
+}
 ")
 
 (defun handle-root ()
