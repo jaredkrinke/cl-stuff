@@ -281,6 +281,7 @@ input[type=submit]:active { background-color: #0808ff; }
 
 @media (max-height: 40em) {
  body { font-size: 85%; }
+ iframe { height: 6em; }
 }
 ")
 
