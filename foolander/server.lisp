@@ -313,7 +313,9 @@ input[type=submit]:active { background-color: #0808ff; }
 	      (make-array *high-scores-count*
 			  :element-type 'integer
 			  :initial-contents (read stream))
-	      (loop repeat *high-scores-count* collect 0)))))
+	      (make-array *high-scores-count*
+			  :element-type 'integer
+			  :initial-element 0)))))
 
 (defun high-scores-get-under-lock ()
   "Returns a list of high scores (must be called under lock)"
