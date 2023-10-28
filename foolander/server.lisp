@@ -105,7 +105,7 @@
 (defun board-set (position value)
   "Queues a change in the value of the specified cell for the current board"
   ;; TODO: Consider only queueing if different from most recent (incl. updates?)
-  (pushnew (list position value) *board-updates*))
+  (push (list position value) *board-updates*))
 
 (defun poll-event ()
   "Polls for queued actions"
@@ -423,7 +423,7 @@ input[type=submit]:active { background-color: #0808ff; }
 	(progn
 	  (board-set tail-position :empty)
 	  (board-set new-head-position :player)
-	  (pushnew new-head-position *snake*)
+	  (push new-head-position *snake*)
 	  (if (equal new-head-position *goal-position*)
 	      (capture-goal)
 	      (setf *snake* (nbutlast *snake* 1))))
