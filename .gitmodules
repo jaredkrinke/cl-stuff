@@ -79,3 +79,6 @@
 [submodule "deps/calispel"]
 	path = deps/calispel
 	url = https://github.com/hawkir/calispel.git
+[submodule "deps/swank"]
+	path = deps/swank
+	url = https://github.com/slime/slime.git
