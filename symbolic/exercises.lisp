@@ -806,3 +806,10 @@
 	 (percentage (* 100 (/ average larger))))
     (list 'average average 'is percentage 'percent 'of 'max larger)))
 
+(defun chop (list)
+  (setf (cdr list) nil)
+  list)
+
+(defun ntack (list symbol)
+  (setf (cdr (last list)) (cons symbol nil))
+  list)
