@@ -813,3 +813,124 @@
 (defun ntack (list symbol)
   (setf (cdr (last list)) (cons symbol nil))
   list)
+
+;;; Chapter 11
+(defun it-member (item list)
+  (dolist (x list)
+    (if (eql x item) (return t))))
+
+(defun it-assoc (key table)
+  (dolist (row table)
+    (if (eql (first row) key) (return row))))
+
+(defun check-all-odd (numbers)
+  (cond ((null numbers) t)
+	((evenp (first numbers)) nil)
+	(t (check-all-odd (rest numbers)))))
+
+(defun it-length (list)
+  (let ((length 0))
+    (dolist (x list)
+      (incf length))
+    length))
+
+(defun it-nth (index list)
+  (dotimes (x index)
+    (setf list (cdr list)))
+  (first list))
+
+(defun it-union (a b)
+  (let ((union a))
+    (dolist (x b)
+      (pushnew x union))
+    union))
+
+(defun it-reverse (list)
+  (let ((reversed nil))
+    (dolist (x list reversed)
+      (push x reversed))))
+
+(defun check-all-odd-do (list)
+  (do ((l list (rest l)))
+      ((null l) t)
+    (when (evenp (first l)) (return nil))))
+
+(defun find-largest (list-of-numbers)
+  (do* ((list list-of-numbers (rest list))
+	(element (first list) (first list))
+	(largest element))
+       ((null list) largest)
+    (when (> element largest)
+      (setf largest element))))
+
+(defun power-of-2 (n)
+  (do ((count n (1- count))
+       (result 1 (* result 2)))
+      ((<= count 0) result)))
+
+(defun first-non-integer (list)
+  (dolist (x list)
+    (unless (integerp x) (return x))))
+
+(defun it-fib (n)
+  (do* ((i 0 (1+ i))
+	(f0 0 f1)
+	(f1 0 result)
+	(result 1 (+ f0 f1)))
+       ((= i n) result)))
+
+(defun complement-base (base)
+  (case base
+    (a 't)
+    (c 'g)
+    (g 'c)
+    (t 'a)))
+
+(defun complement-strand (strand)
+  (mapcar #'complement-base strand))
+
+(defun make-double (strand)
+  (loop for base in strand
+	collect (list base (complement-base base))))
+
+(defun count-bases (strand)
+  (let ((counts (list (cons 'a 0)
+		      (cons 'c 0)
+		      (cons 'g 0)
+		      (cons 't 0))))
+    (labels ((add (base) (incf (cdr (assoc base counts)))))
+    (dolist (base-or-pair strand)
+      (cond ((atom base-or-pair) (add base-or-pair))
+	    (t (dolist (base base-or-pair) (add base))))))
+    counts))
+
+(defun prefixp (a b)
+  (do* ((s1 a (rest s1))
+	(s2 b (rest s2)))
+       ((null s1) t)
+    (unless (eql (first s1) (first s2)) (return nil))))
+
+(defun appearsp (a b)
+  (cond ((null b) nil)
+	((prefixp a b) t)
+	(t (appearsp a (rest b)))))
+
+(defun coverp (a b)
+  (do ((s1 a (or (rest s1) a))
+       (s2 b (rest s2))
+       (expected (first a) (first s1))
+       (actual (first b) (first s2)))
+      ((equal s1 s2) t)
+    (unless (equal expected actual) (return nil))))
+
+(defun prefix (n strand)
+  (let ((result nil))
+    (dotimes (x n (nreverse result))
+      (push (first strand) result)
+      (setf strand (rest strand)))))
+
+(defun kernel (strand)
+  (do* ((kernel-length 1 (1+ kernel-length))
+	(prefix (prefix 1 strand) (prefix kernel-length strand)))
+       (nil nil)
+    (if (coverp prefix strand) (return prefix))))
