@@ -934,3 +934,46 @@
 	(prefix (prefix 1 strand) (prefix kernel-length strand)))
        (nil nil)
     (if (coverp prefix strand) (return prefix))))
+
+(defstruct node
+  name
+  question
+  yes-case
+  no-case)
+
+(defvar *node-list* nil)
+
+(defun init-node-list ()
+  (setf *node-list* nil))
+
+(defun add-node (name question yes-case no-case)
+  (let ((node (make-node :name name
+			 :question question
+			 :yes-case yes-case
+			 :no-case no-case)))
+    (push node *node-list*)
+    (node-name node)))
+
+(defun find-node (node-name)
+  (find-if (lambda (node) (equal node-name (node-name node))) *node-list*))
+
+(defun process-node (node-name)
+  (let ((node (find-node node-name)))
+    (cond (node (if (yes-or-no-p "~&~a " (node-question node))
+		    (node-yes-case node)
+		    (node-no-case node)))
+	  (t (format t "~&Node not found: ~a~%" node-name)
+	     nil))))
+
+(defun run ()
+  (do ((current-node 'start))
+      ((or (stringp current-node) (null current-node)) nil)
+    (setf current-node (process-node current-node))))
+
+(defun read-node ()
+  (let ((args nil))
+    (dolist (property '(name question yes-case no-case))
+      (format t "~&~a? " property)
+      (push (read) args))
+    (setf args (nreverse args))
+    (apply #'add-node args)))
