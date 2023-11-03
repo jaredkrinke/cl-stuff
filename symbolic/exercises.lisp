@@ -935,6 +935,7 @@
        (nil nil)
     (if (coverp prefix strand) (return prefix))))
 
+;;; Chapter 12
 (defstruct node
   name
   question
@@ -977,3 +978,134 @@
       (push (read) args))
     (setf args (nreverse args))
     (apply #'add-node args)))
+
+;;; Chapter 13
+(defun subprop (symbol element property)
+  (setf (get symbol property) (remove element (get symbol property))))
+
+(defun forget-meeting (x y)
+  (subprop x y 'has-met)
+  (subprop y x 'has-met))
+
+(defun my-get (symbol indicator)
+  (do ((cell (symbol-plist symbol) (cddr cell)))
+      ((null cell) nil)
+    (if (eql (first cell) indicator) (return (cadr cell)))))
+
+(defun hasprop (symbol indicator)
+  (do ((cell (symbol-plist symbol) (cddr cell)))
+      ((null cell) nil)
+    (if (eql (first cell) indicator) (return t))))
+
+(defvar *hist-array* nil)
+(defvar *total-points* nil)
+
+(defun new-histogram (bins)
+  (setf *hist-array* (make-array bins :initial-element 0))
+  (setf *total-points* 0))
+
+(defun record-value (number)
+  (cond ((<= 0 number (1- (length *hist-array*)))
+	 (incf (aref *hist-array* number)))
+	(t (format t "~&Invalid number: ~a~%" number))))
+
+(defun print-hist-line (bin-index)
+  (format t "~&~2s [~3s] " bin-index (aref *hist-array* bin-index))
+  (dotimes (x (aref *hist-array* bin-index)) (format t "*"))
+  (format t "~%"))
+
+(defun print-histogram ()
+  (dotimes (x (length *hist-array*))
+    (print-hist-line x)))
+
+(defvar *crypto-text* nil)
+(defvar *encipher-table* nil)
+(defvar *decipher-table* nil)
+
+(setf *crypto-text* '("zj ze kljjls jf slapzi ezvlij pib kl jufwxuj p hffv jupi jf"
+		      "enlpo pib slafml pvv bfwkj"))
+
+(defun initialize-cipher ()
+  (setf *encipher-table* (make-hash-table :size 26))
+  (setf *decipher-table* (make-hash-table :size 26)))
+
+(defun make-substitution (from to)
+  (setf (gethash from *decipher-table*) to)
+  (setf (gethash to *encipher-table*) from))
+
+(defun undo-substitution (from)
+  (let ((to (gethash from *decipher-table*)))
+    (remhash from *decipher-table*)
+    (remhash to *encipher-table*)))
+
+(defun clear-cipher ()
+  (clrhash *decipher-table*)
+  (clrhash *encipher-table*))
+
+(defun decipher-string (cipher-text)
+  (let ((deciphered-text (make-string (length cipher-text) :initial-element #\Space)))
+    (dotimes (x (length cipher-text) deciphered-text)
+      (let* ((from (aref cipher-text x))
+	     (to (gethash from *decipher-table*)))
+	(when to (setf (aref deciphered-text x) to))))))
+
+(defun show-line (line)
+  (format t "~&~a~%~a~%~%" line (decipher-string line)))
+
+(defun show-text (list-of-strings)
+  (dolist (line list-of-strings)
+    (show-line line)))
+
+(defun get-first-char (x)
+  (char-downcase
+   (char (format nil "~a" x) 0)))
+
+(defun read-letter ()
+  (let ((o (read)))
+    (cond ((or (eql o 'end) (eql o 'undo)) o)
+	  (t (get-first-char o)))))
+
+(defun sub-letter (char)
+  (if (gethash char *decipher-table*)
+      (format t "~&Error: ~a has already been substituted~%" char)
+      (let ((to nil))
+	(format t "What does ~a decipher to? " char)
+	(setf to (read-letter))
+	(if (gethash to *encipher-table*)
+	    (format t "~&Error: ~a has already been used~%" to)
+	    (make-substitution char to)))))
+
+(defun undo-letter ()
+  (format t "~&Undo which letter? ")
+  (undo-substitution (read)))
+
+(defun solve (lines)
+  (do ((input nil))
+      ((eql input 'end) nil)
+    (show-text lines)
+    (format t "~&Substitute which letter? ")
+    (setf input (read-letter))
+    (cond ((eql input 'end) nil)
+	  ((eql input 'undo) (undo-letter))
+	  (t (sub-letter input)))))
+
+;;; Chapter 14
+(defmacro set-nil (x)
+  `(setq ,x nil))
+
+(defmacro simple-rotatef (a b)
+  `(let ((temp ,a))
+     (setq ,a ,b)
+     (setq ,b temp)))
+
+(defmacro set-mututal (a b)
+  `(progn
+     (setf ,a ',b)
+     (setf ,b ',a)))
+
+(defmacro variable-chain (&rest variables)
+  `(progn
+     ,@(do ((result nil)
+	    (cell variables (rest cell)))
+	   ((null (rest cell)) (nreverse result))
+	 (push `(setq ,(first cell) ',(second cell)) result))))
