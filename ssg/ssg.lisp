@@ -65,12 +65,12 @@
   "Converts e.g. :HTML to 'html'"
   (string-downcase (symbol-name keyword)))
 
-(defun process-item (stream item)
-  "Renders ITEM (a list representing HTML, or a string) to the given stream"
+(defun write-html (fragment &optional (stream *standard-output*))
+  "Writes a list representing an HTML document or fragment as 'text/html' to STREAM"
   ;;; TODO: Verbatim HTML -- needed?
-  (let* ((keyword (first item))
+  (let* ((keyword (first fragment))
 	 (tag (keyword->tag keyword))
-	 (children (rest item))
+	 (children (rest fragment))
 	 (void (void-tag-p keyword))
 	 (root (eql keyword :html)))
     (when root
@@ -90,7 +90,7 @@
     (unless void
       (loop for child in children do
 	(cond ((stringp child) (write-escaped-string child stream))
-	      ((listp child) (process-item stream child))
+	      ((listp child) (write-html child stream))
 	      (t (error "Unexpected child: ~a (~a)" child (type-of child)))))
       (write-string "</" stream)
       (write-string tag stream)
@@ -99,5 +99,5 @@
 (defun html (fragment)
   "Converts a list representing an HTML document or fragment into a string that encodes the HTML document"
   (let ((stream (make-string-output-stream)))
-    (process-item stream fragment)
+    (write-html fragment stream)
     (get-output-stream-string stream)))
