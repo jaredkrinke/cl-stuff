@@ -33,7 +33,25 @@
 			       (#\> . "&gt;")
 			       (#\' . "&apos;")
 			       (#\" . "&quot;")))
-			       
+
+(defparameter *html-void-tags* '(:area
+				 :base
+				 :br
+				 :col
+				 :embed
+				 :hr
+				 :img
+				 :input
+				 :link
+				 :meta
+				 :param
+				 :source
+				 :track
+				 :wbr))
+
+(defun void-tag-p (keyword)
+  "Returns non-NIL if the given keyword maps to an HTML void tag (e.g. :BR for <br>)"
+  (member keyword *html-void-tags*))
 
 (defun write-escaped-string (string &optional (stream *standard-output*))
   "Escapes STRING for use in an HTML document, and writes it to STREAM"
@@ -49,28 +67,34 @@
 
 (defun process-item (stream item)
   "Renders ITEM (a list representing HTML, or a string) to the given stream"
-  ;;; TODO: DOCTYPE, void tags
   ;;; TODO: Verbatim HTML -- needed?
-  (let ((tag (keyword->tag (first item)))
-	(children (rest item)))
+  (let* ((keyword (first item))
+	 (tag (keyword->tag keyword))
+	 (children (rest item))
+	 (void (void-tag-p keyword))
+	 (root (eql keyword :html)))
+    (when root
+      (write-string "<!DOCTYPE html>" stream)
+      (write-char #\Newline stream))
     (write-char #\< stream)
     (write-string tag stream)
     (loop for child = (first children)
 	  while (keywordp child) do
 	    (write-char #\Space stream)
-	    (write-string (keyword->tag child))
+	    (write-string (keyword->tag child) stream)
 	    (write-string "=\"" stream)
 	    (write-escaped-string (second children) stream)
 	    (write-char #\" stream)
 	    (setf children (cddr children)))
     (write-string ">" stream)
-    (loop for child in children do
-      (cond ((stringp child) (write-escaped-string child stream))
-	    ((listp child) (process-item stream child))
-	    (t (error "Unexpected child: ~a (~a)" child (type-of child)))))
-    (write-string "</" stream)
-    (write-string tag stream)
-    (write-char #\> stream)))
+    (unless void
+      (loop for child in children do
+	(cond ((stringp child) (write-escaped-string child stream))
+	      ((listp child) (process-item stream child))
+	      (t (error "Unexpected child: ~a (~a)" child (type-of child)))))
+      (write-string "</" stream)
+      (write-string tag stream)
+      (write-char #\> stream))))
 
 (defun html (fragment)
   "Converts a list representing an HTML document or fragment into a string that encodes the HTML document"
