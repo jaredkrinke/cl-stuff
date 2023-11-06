@@ -30,9 +30,11 @@
 ;;; HTML templates
 (defparameter *html-escapes* '((#\& . "&amp;")
 			       (#\< . "&lt;")
-			       (#\> . "&gt;")
-			       (#\' . "&apos;")
-			       (#\" . "&quot;")))
+			       (#\> . "&gt;")))
+
+(defparameter *html-attribute-escapes* `((#\' . "&apos;")
+					 (#\" . "&quot;")
+					 . ,*html-escapes*))
 
 (defparameter *html-void-tags* '(:area
 				 :base
@@ -53,19 +55,27 @@
   "Returns non-NIL if the given keyword maps to an HTML void tag (e.g. :BR for <br>)"
   (member keyword *html-void-tags*))
 
-(defun write-escaped-string (string &optional (stream *standard-output*))
-  "Escapes STRING for use in an HTML document, and writes it to STREAM"
+(defun write-escaped-string (string escapes &optional (stream *standard-output*))
+  "Escapes STRING using ESCAPES, writing to STREAM"
   (loop for character across string do
-    (let ((row (assoc character *html-escapes*)))
+    (let ((row (assoc character escapes)))
       (if row
 	  (write-string (cdr row) stream)
 	  (write-char character stream)))))
+
+(defun write-escaped-text (text &optional (stream *standard-output*))
+  "Escapes TEXT for use in an HTML document, and writes it to STREAM"
+  (write-escaped-string text *html-escapes* stream))
+
+(defun write-escaped-attribute (attribute-value &optional (stream *standard-output*))
+  "Escapes ATTRIBUTE-VALUE for use in an HTML attribute, and writes it to STREAM"
+  (write-escaped-string attribute-value *html-attribute-escapes* stream))
 
 (defun keyword->tag (keyword)
   "Converts e.g. :HTML to 'html'"
   (string-downcase (symbol-name keyword)))
 
-(defun write-html (fragment &optional (stream *standard-output*))
+(defun write-html (fragment &optional (stream *standard-output*) inline)
   "Writes a list representing an HTML document or fragment as 'text/html' to STREAM"
   ;;; TODO: Verbatim HTML -- needed?
   (let* ((keyword (first fragment))
@@ -73,9 +83,10 @@
 	 (children (rest fragment))
 	 (void (void-tag-p keyword))
 	 (root (eql keyword :html)))
-    (when root
-      (write-string "<!DOCTYPE html>" stream)
-      (write-char #\Newline stream))
+    (unless inline
+      (when root
+	(write-string "<!DOCTYPE html>" stream))
+      (fresh-line stream))
     (write-char #\< stream)
     (write-string tag stream)
     (loop for child = (first children)
@@ -83,18 +94,22 @@
 	    (write-char #\Space stream)
 	    (write-string (keyword->tag child) stream)
 	    (write-string "=\"" stream)
-	    (write-escaped-string (second children) stream)
+	    (write-escaped-attribute (second children) stream)
 	    (write-char #\" stream)
 	    (setf children (cddr children)))
     (write-string ">" stream)
     (unless void
-      (loop for child in children do
-	(cond ((stringp child) (write-escaped-string child stream))
-	      ((listp child) (write-html child stream))
-	      (t (error "Unexpected child: ~a (~a)" child (type-of child)))))
+      (loop with inline = nil
+	    for child in children do
+	      (cond ((stringp child)
+		     (setf inline t)
+		     (write-escaped-text child stream))
+		    ((listp child) (write-html child stream inline))
+		    (t (error "Unexpected child: ~a (~a)" child (type-of child)))))
       (write-string "</" stream)
       (write-string tag stream)
-      (write-char #\> stream))))
+      (write-char #\> stream)
+      (unless inline (fresh-line stream)))))
 
 (defun html (fragment)
   "Converts a list representing an HTML document or fragment into a string that encodes the HTML document"
