@@ -51,20 +51,36 @@
   ((id :documentation "Path/id for the item"
        :accessor item-id
        :initarg :id)
+   (time :documentation "'Last modified time' for this item"
+	 :accessor item-time
+	 :initarg :time)
    (content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now
 	    :accessor item-content
-	    :initarg :content)
+	    :initarg :content
+	    :initform nil)
    ;; TODO: a-list or subclassing?
    (metadata :documentation "Properties a-list associated with this item"
 	     :accessor item-metadata
-	     :initarg :metadata))
+	     :initarg :metadata
+	     :initform nil))
   (:documentation "Represents an item, optionally with metadata"))
 
 (defclass node ()
   ((input :documentation "Name or pattern indicating inputs"
 	  :accessor node-input
-	  :initarg :input))
+	  :initarg :input)
+   (time :documentation "Time of last (actual) update"
+	 :accessor node-time
+	 :initform nil)
+   (cached-result :documentation "Cached results (list of ITEM) from previous runs"
+		  :accessor node-cached-result
+		  :initarg :cached-result
+		  :initform nil))
   (:documentation "Represents an arbitrary node in the processing graph"))
+
+;; (defclass source-node (node)
+;;   ()
+;;   (:documentation "Represents a node that initially enumerates items from a data source (note: these nodes *always* must run)"))
 
 (defclass transform-node (node)
   ()
@@ -74,32 +90,54 @@
   ()
   (:documentation "Represents an M:N processing node in the graph"))
 
-(defgeneric process (node &optional items)
+(defgeneric update (node items)
   (:documentation "Processes a node in the pipeline graph"))
 
 (defgeneric transform (node item)
   (:documentation "Transforms a single item for a transform node"))
 
-(defmethod process ((node transform-node) &optional items)
-  (loop for item in items collect (transform node item)))
+(defgeneric aggregate (node items)
+  (:documentation "Aggregates items into one or more result items"))
+
+(defmethod update ((node transform-node) items)
+  ;; Only update newer items
+  (let ((updated nil)
+	(results nil)
+	(cached-results (node-cached-result node)))
+    (loop for item in items do
+      (let* ((id (item-id item))
+	     (cached-result (find-if (lambda (i) (equal (item-id i) id))
+				     cached-results)))
+	(if (and cached-result
+		 (<= (item-time item) (item-time cached-result)))
+	    (push cached-result results)
+	    (progn (setf updated t)
+		   (push (transform node item) results)))))
+    (if updated
+	(setf (node-cached-result node) results)
+	cached-results)))
+
+(defmethod update ((node aggregate-node) items)
+  ;; Always re-run aggregations--UPDATE wouldn't be called on this node without upstream changes
+  (setf (node-cached-result node) (aggregate node items)))
 
 ;;; Built-in nodes
-(defparameter *source-directory* nil "Directory to read input files from for the READ-FILES source code")
-(defparameter *destination-directory* nil "Directory to write files out to for the WRITE-FILES node")
+(defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FILES source code")
+(defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
 
 ;; TODO: Should support reading bytes, strings, and objects
 (defclass read-files (aggregate-node)
   ()
   (:documentation "Source node for reading input files from *SOURCE-DIRECTORY*"))
 
-(defmethod process ((node read-files) &optional (items nil))
-  (declare (ignore items)) ; TODO: Needed?
+(defmethod aggregate ((node read-files) (items null))
   (let ((result nil))
     (for-each-file *source-directory*
 		   (lambda (file)
 		     (push (make-instance 'item
 					  :id (path-relative-to *source-directory*
 								file)
+					  :time (file-write-date file)
 					  :content (with-open-file (stream file)
 						     (read stream)))
 			   result)))
@@ -123,7 +161,8 @@
   ()
   (:documentation "Transform that converts HTML in list form to an HTML string"))
 
-(defmethod transform ((node list-to-html) item)
+(defmethod transform ((node list-to-html) (item item))
+  ;; TODO: This needs to clone the item instead of overwriting a property!
   (setf (item-content item) (html (item-content item)))
   item)
 
@@ -132,6 +171,9 @@
   '((read-files . (list-to-html))
     (list-to-html . (write-files)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
+
+(defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
+(defvar *reversed-pipeline* nil "*PIPELINE* with edges reversed, to find nodes' prerequisites")
 
 (defun pipeline-edges (pipeline)
   "Returns a (new) list of edges in PIPELINE"
@@ -171,6 +213,7 @@
 	(error "PIPELINE has a cycle!")
 	(nreverse sorted-nodes))))
 
+;;; TODO: Instead of doing this, attach parents directly to the NODE objects
 (defun pipeline-reverse (pipeline)
   "Takes PIPELINE as list of (PARENT . (CHILD1 ...)) and returns a list of (CHILD . (PARENT1 ...))"
   (let ((edges (pipeline-edges pipeline))
@@ -182,22 +225,51 @@
 	    (push (list child parent) result))))
     result))
 
-;; TODO: Build file-level dependency graph!
-(defun run (pipeline)
+(defun initialize-pipeline ()
+  "Initializes the processing graph from *PIPELINE*"
+  ;; TODO: Eventually, results should be persisted to disk and loaded here
+  (setf *name-to-nodes* (loop for name in (pipeline-sort *pipeline*)
+			      collect (cons name (make-instance name))))
+  (setf *reversed-pipeline* (pipeline-reverse *pipeline*)))
+
+(defun newest-item-time (items)
+  "Returns the newest ITEM-TIME in ITEMS"
+  (reduce #'max (mapcar #'item-time items) :initial-value 0))
+
+(defun results-differ-p (old new)
+  "Returns non-NIL if result set NEW is newer than result set OLD (either contains newer files, or file set is different)"
+  (if (eql old new)
+      nil
+      (or (let ((newest-old (newest-item-time old))
+		(newest-new (newest-item-time new)))
+	    (> newest-new newest-old))
+	  (let ((ids-old (mapcar #'item-id old))
+		(ids-new (mapcar #'item-id new)))
+	    (set-difference ids-old ids-new :test 'equal)))))
+
+(defun run-pipeline ()
   "Runs the given pipeline"
-  (let ((reversed (pipeline-reverse pipeline))
-	(results nil))
-    (loop for (name . node) in (mapcar (lambda (name) (cons name
-							    (make-instance name)))
-				       (pipeline-sort pipeline))
-	  for parents = (rest (assoc name reversed))
-	  for input = (if parents
-			  (loop for parent in parents
-				nconc (rest (assoc parent results)))
-			  nil)
-	  for output = (process node input)
-	  do (format t "~a: ~s -> ~s~%" name (mapcar #'item-id input) (mapcar #'item-id output))
-	     (push (cons name output) results))))
+  (loop for (name . node) in *name-to-nodes*
+	for parents = (rest (assoc name *reversed-pipeline*))
+	for node-time = (node-time node)
+	for input-time = (if parents
+			     (reduce #'max
+				     (mapcar #'node-time
+					     ;; TODO: This could be avoided by linking nodes instead of names!
+					     (mapcar (lambda (parent) (rest (assoc parent *name-to-nodes*)))
+						     parents))
+				     :initial-value 0)
+			     (1+ (get-universal-time)))
+	do (when (or (not node-time)
+		     (> input-time node-time))
+	     (let* ((cached-results (node-cached-result node))
+		    (input (loop for parent in parents
+				 append (node-cached-result (rest (assoc parent *name-to-nodes*)))))
+		    (results (update node input)))
+	       (format t "~a: ~s -> ~s~%" name (mapcar #'item-id input) (mapcar #'item-id results))
+	       (when (results-differ-p cached-results results)
+		 (setf (node-cached-result node) results)
+		 (setf (node-time node) (get-universal-time)))))))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
