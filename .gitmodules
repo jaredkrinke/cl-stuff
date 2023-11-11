@@ -82,3 +82,12 @@
 [submodule "deps/swank"]
 	path = deps/swank
 	url = https://github.com/slime/slime.git
+[submodule "deps/file-attributes"]
+	path = deps/file-attributes
+	url = https://github.com/Shinmera/file-attributes.git
+[submodule "deps/trivial-indent"]
+	path = deps/trivial-indent
+	url = https://github.com/Shinmera/trivial-indent.git
+[submodule "deps/documentation-utils"]
+	path = deps/documentation-utils
+	url = https://github.com/Shinmera/documentation-utils.git
