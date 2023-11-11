@@ -99,6 +99,7 @@
 (defgeneric aggregate (node items)
   (:documentation "Aggregates items into one or more result items"))
 
+;; TODO: This doesn't really work for copied files on Windows--the "modified time" is copied with the file, so it looks like an old file, even if it's new...
 (defmethod update ((node transform-node) items)
   ;; Only update newer items
   (let ((updated nil)
@@ -143,6 +144,7 @@
 			   result)))
     result))
 
+;; TODO: Needs to be aggregate in order to catch deleted files!
 (defclass write-files (transform-node)
   ()
   (:documentation "Sink node for writing items out to *DESTINATION-DIRECTORY*"))
