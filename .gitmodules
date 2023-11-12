@@ -84,7 +84,7 @@
 	url = https://github.com/slime/slime.git
 [submodule "deps/file-attributes"]
 	path = deps/file-attributes
-	url = https://github.com/Shinmera/file-attributes.git
+	url = https://github.com/jaredkrinke/file-attributes.git
 [submodule "deps/trivial-indent"]
 	path = deps/trivial-indent
 	url = https://github.com/Shinmera/trivial-indent.git
