@@ -2,7 +2,7 @@
 
 (defpackage dirmon
   (:use :cl)
-  (:export #:for-each-difference
+  (:export #:for-each-change-in-directory
 	   #:read-snapshot
 	   #:write-snapshot))
 
