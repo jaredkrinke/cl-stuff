@@ -1,7 +1,10 @@
 ;;;; dirmon is a library for detecting changes within a directory in the file system
 
 (defpackage dirmon
-  (:use :cl))
+  (:use :cl)
+  (:export #:for-each-difference
+	   #:read-snapshot
+	   #:write-snapshot))
 
 (in-package :dirmon)
 
