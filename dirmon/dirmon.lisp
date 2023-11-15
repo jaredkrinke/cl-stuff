@@ -8,6 +8,55 @@
 
 (in-package :dirmon)
 
+(defparameter *wildcard-pathname* (make-pathname :name :wild
+						 :type :wild))
+
+(defun enumerate-files (directory)
+  (declare (type pathname directory))
+  (let ((items (list directory))
+	(files nil))
+    (loop while items do
+      (let ((item (pop items)))
+	(declare (type pathname item))
+	(if (pathname-name item)
+	    (push item files)
+	    (loop for child in (directory (merge-pathnames *wildcard-pathname* item)) do
+	      (push child items)))))
+    files))
+
+;;; SBCL+Windows only
+(defun for-each-item-in-directory (function directory)
+  "Calls FUNCTION with (string, (or :file :directory)) for each item in DIRECTORY"
+  (declare (type function function))
+  (sb-win32::native-call-with-directory-iterator
+   (lambda (next)
+     (declare (type function next))
+     (loop for (name kind) = (multiple-value-list (funcall next))
+	   while name
+	   do (funcall function name kind)))
+   (namestring directory)
+   nil))
+
+(defun enumerate-files (directory)
+  (declare (type pathname directory))
+  (let ((items (list directory))
+	(files nil))
+    (loop while items do
+      (let ((item (pop items)))
+	(declare (type pathname item))
+	(if (pathname-name item)
+	    (push item files)
+	    (for-each-item-in-directory
+	     (lambda (name kind)
+	       (push (merge-pathnames
+		      (ecase kind
+			(:file (parse-namestring name))
+			(:directory (make-pathname :directory (list :relative name))))
+		      item)
+		     items))
+	     item))))
+    files))
+
 ;;; File system utilities
 (defun for-each-file-in-directory (directory function &key (process-file-p (constantly t)))
   "Calls FUNCTION on each file (directly) within BASE-DIRECTORY, optionally filtering out files"
