@@ -28,7 +28,7 @@
     files))
 
 ;;; SBCL+Windows only
-#+win32
+#+win32_someday
 (progn
   (defun for-each-item-in-directory (function directory)
     "Calls FUNCTION with (string, (or :file :directory)) for each item in DIRECTORY"
