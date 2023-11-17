@@ -2,7 +2,10 @@
 
 (defpackage dirmon
   (:use :cl)
+  ;; (:import-from :org.shirakumo.file-attributes
+  ;; 		:modification-time)
   (:export #:for-each-change-in-directory
+	   #:get-changes-in-directory
 	   #:read-snapshot
 	   #:write-snapshot))
 
@@ -25,37 +28,39 @@
     files))
 
 ;;; SBCL+Windows only
-(defun for-each-item-in-directory (function directory)
-  "Calls FUNCTION with (string, (or :file :directory)) for each item in DIRECTORY"
-  (declare (type function function))
-  (sb-win32::native-call-with-directory-iterator
-   (lambda (next)
-     (declare (type function next))
-     (loop for (name kind) = (multiple-value-list (funcall next))
-	   while name
-	   do (funcall function name kind)))
-   (namestring directory)
-   nil))
+#+win32
+(progn
+  (defun for-each-item-in-directory (function directory)
+    "Calls FUNCTION with (string, (or :file :directory)) for each item in DIRECTORY"
+    (declare (type function function))
+    (sb-win32::native-call-with-directory-iterator
+     (lambda (next)
+       (declare (type function next))
+       (loop for (name kind) = (multiple-value-list (funcall next))
+	     while name
+	     do (funcall function name kind)))
+     (namestring directory)
+     nil))
 
-(defun enumerate-files (directory)
-  (declare (type pathname directory))
-  (let ((items (list directory))
-	(files nil))
-    (loop while items do
-      (let ((item (pop items)))
-	(declare (type pathname item))
-	(if (pathname-name item)
-	    (push item files)
-	    (for-each-item-in-directory
-	     (lambda (name kind)
-	       (push (merge-pathnames
-		      (ecase kind
-			(:file (parse-namestring name))
-			(:directory (make-pathname :directory (list :relative name))))
-		      item)
-		     items))
-	     item))))
-    files))
+  (defun enumerate-files (directory)
+    (declare (type pathname directory))
+    (let ((items (list directory))
+	  (files nil))
+      (loop while items do
+	(let ((item (pop items)))
+	  (declare (type pathname item))
+	  (if (pathname-name item)
+	      (push item files)
+	      (for-each-item-in-directory
+	       (lambda (name kind)
+		 (push (merge-pathnames
+			(ecase kind
+			  (:file (parse-namestring name))
+			  (:directory (make-pathname :directory (list :relative name))))
+			item)
+		       items))
+	       item))))
+      files)))
 
 ;;; File system utilities
 (defun for-each-file-in-directory (directory function &key (process-file-p (constantly t)))
@@ -77,11 +82,35 @@
 				  process-directory-p
 				  #'process-directory)))
 
+;;; Snapshots
+;; (defclass entry ()
+;;   ((kind :initarg :kind)
+;;    (time :initarg :time
+;; 	 :accessor entry-time))
+;;   (:documentation "Represents a file system entry"))
+
+;; (defclass file-entry (entry)
+;;   ((kind :initform :file))
+;;   (:documentation "Represents a file in the file system"))
+
+;; (defclass directory-entry (entry)
+;;   ((kind :initform :directory)
+;;    (children :initform (make-hash-table :test 'equal)
+;; 	     :reader entry-children))
+;;   (:documentation "Represents a directory in the file system"))
+
+;; (defclass snapshot (directory-entry)
+;;   ((base-directory :initarg base-directory))
+;;   (:documentation "Represents a snapshot of a directory in the file system"))
+
+;;; TODO: Implement fast filtering using directory modification time
+
 ;;; Snapshots (just a hash map of relative file path to modification time)
 (defparameter *empty-snapshot* (make-hash-table :test 'equal))
 
 (defun make-snapshot (directory &key (process-directory-p (constantly t)) (process-file-p (constantly t)))
   "Creates a new directory snapshot for DIRECTORY, with optional filtering"
+  ;; TODO: Filtering!
   (let ((snapshot (make-hash-table :test 'equal))
 	(directory-truename (truename directory)))
     (flet ((relative-path (file) (enough-namestring file directory-truename)))
@@ -122,10 +151,26 @@ Returns an updated snapshot (which can be passed to future calls to detect chang
     (for-each-difference previous-snapshot snapshot function)
     snapshot))
 
-(defun write-snapshot (snapshot &optional (stream *standard-output*))
-  "Writes SNAPSHOT out to STREAM"
-  (error "TODO: Not implemented"))
+(defun get-changes-in-directory (directory
+				 &key previous-snapshot
+				   (process-directory-p (constantly t))
+				   (process-file-p (constantly t)))
+  "Crawls DIRECTORY and returns a list of ((OR :CREATE :UPDATE :DELETE) PATHNAME) and
+a snapshot (which can be passed to future calls to detect changes"
+  (let* ((changes nil)
+	 (snapshot (for-each-change-in-directory
+		    (lambda (event file)
+		      (push (list event file) changes))
+		    directory
+		    :previous-snapshot previous-snapshot
+		    :process-directory-p process-directory-p
+		    :process-file-p process-file-p)))
+    (values changes snapshot)))
 
-(defun read-snapshot (&optional (stream *standard-input*))
-  "Reads a snapshot (prevoiusly written using WRITE-SNAPSHOT) from STREAM"
-  (error "TODO: Not implemented"))
+;; (defun write-snapshot (snapshot &optional (stream *standard-output*))
+;;   "Writes SNAPSHOT out to STREAM"
+;;   (error "TODO: Not implemented"))
+
+;; (defun read-snapshot (&optional (stream *standard-input*))
+;;   "Reads a snapshot (prevoiusly written using WRITE-SNAPSHOT) from STREAM"
+;;   (error "TODO: Not implemented"))

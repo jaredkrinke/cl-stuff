@@ -8,53 +8,53 @@
   "(Destructively) DELETE OBJECT from PLACE"
   `(setf ,place (delete ,object ,place)))
 
-(defmacro with-gensyms ((&rest names) &body body)
-  `(let ,(loop for name in names collect `(,name (gensym)))
-     ,@body))
+;; (defmacro with-gensyms ((&rest names) &body body)
+;;   `(let ,(loop for name in names collect `(,name (gensym)))
+;;      ,@body))
 
-(defmacro append-itemf (item place)
-  "Appends ITEM to the end of LIST"
-  (with-gensyms (cell)
-    `(let ((,cell (cons ,item nil)))
-       (if ,place
-	   (setf (rest (last ,place)) ,cell)
-	   (setf ,place ,cell))
-       nil)))
+;; (defmacro append-itemf (item place)
+;;   "Appends ITEM to the end of LIST"
+;;   (with-gensyms (cell)
+;;     `(let ((,cell (cons ,item nil)))
+;;        (if ,place
+;; 	   (setf (rest (last ,place)) ,cell)
+;; 	   (setf ,place ,cell))
+;;        nil)))
 
 ;;; File system
-(defun for-each-file-in-directory (directory function &key (process-file-p (constantly t)))
-  "Calls FUNCTION on each file (directly) within BASE-DIRECTORY, optionally filtering out files"
-  (loop for file in (uiop:directory-files directory)
-	do (when (funcall process-file-p file)
-	     (funcall function file))))
+;; (defun for-each-file-in-directory (directory function &key (process-file-p (constantly t)))
+;;   "Calls FUNCTION on each file (directly) within BASE-DIRECTORY, optionally filtering out files"
+;;   (loop for file in (uiop:directory-files directory)
+;; 	do (when (funcall process-file-p file)
+;; 	     (funcall function file))))
 
-(defun for-each-file (base-directory function &key (process-directory-p (constantly t)) (process-file-p (constantly t)))
-  "Calls FUNCTION for each file under (the entire tree of) BASE-DIRECTORY, optionally filtering out directories and files"
-  (uiop:collect-sub*directories base-directory
-				process-directory-p
-				process-directory-p
-				(lambda (directory)
-				  (for-each-file-in-directory directory
-							      function
-							      :process-file-p process-file-p))))
+;; (defun for-each-file (base-directory function &key (process-directory-p (constantly t)) (process-file-p (constantly t)))
+;;   "Calls FUNCTION for each file under (the entire tree of) BASE-DIRECTORY, optionally filtering out directories and files"
+;;   (uiop:collect-sub*directories base-directory
+;; 				process-directory-p
+;; 				process-directory-p
+;; 				(lambda (directory)
+;; 				  (for-each-file-in-directory directory
+;; 							      function
+;; 							      :process-file-p process-file-p))))
 
 (defun relevant-directory-p (directory)
   "Returns non-NIL if the directory is 'relevant', meaning not part of source control, etc."
   (let ((directory-name (first (last (pathname-directory directory)))))
     (not (equal directory-name ".git"))))
 
-(defun path-relative-to (base-directory pathname)
-  (enough-namestring (truename pathname) (truename base-directory)))
+;; (defun path-relative-to (base-directory pathname)
+;;   (enough-namestring (truename pathname) (truename base-directory)))
 
 ;;; Processing and dependency graph
 (defclass item ()
-  ((id :documentation "Path/id for the item"
-       :accessor item-id
-       :initarg :id)
-   (time :documentation "'Last modified time' for this item"
-	 :accessor item-time
-	 :initarg :time)
-   (content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now
+  ;; ((id :documentation "Path/id for the item"
+  ;;      :accessor item-id
+  ;;      :initarg :id)
+   ;; (time :documentation "'Last modified time' for this item"
+   ;; 	 :accessor item-time
+   ;; 	 :initarg :time)
+   ((content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now--actuallly, maybe not. Could just have multiple reader nodes
 	    :accessor item-content
 	    :initarg :content
 	    :initform nil)
@@ -65,71 +65,100 @@
 	     :initform nil))
   (:documentation "Represents an item, optionally with metadata"))
 
+;; (defun item-clone (item)
+;;   "Clones an item (shallowly) by duplicating its properties"
+;;   (make-instance 'item
+;; 		 ;; :id (item-id item)
+;; 		 :content (item-content item)
+;; 		 :metadata (item-metadata item)))
+
 (defclass node ()
   ((input :documentation "Name or pattern indicating inputs"
 	  :accessor node-input
 	  :initarg :input)
-   (time :documentation "Time of last (actual) update"
-	 :accessor node-time
-	 :initform nil)
-   (cached-result :documentation "Cached results (list of ITEM) from previous runs"
-		  :accessor node-cached-result
-		  :initarg :cached-result
-		  :initform nil))
+   ;; (time :documentation "Time of last (actual) update"
+   ;; 	 :accessor node-time
+   ;; 	 :initform nil)
+   (snapshot :documentation "If available, cached snapshot (hash of path to item) from previous runs"
+	     :accessor node-snapshot
+	     :initarg :snapshot
+	     :initform nil))
   (:documentation "Represents an arbitrary node in the processing graph"))
 
-;; (defclass source-node (node)
-;;   ()
-;;   (:documentation "Represents a node that initially enumerates items from a data source (note: these nodes *always* must run)"))
+(defclass source-node (node)
+  ()
+  (:documentation "Represents a node that initially enumerates items from a data source (note: these nodes *always* must run)"))
 
 (defclass transform-node (node)
-  ()
+  ((cached-outputs :initform (make-hash-table :test 'equal)
+		   :accessor transform-node-cached-outputs
+		   :documentation "Cached hash of input to output(s), needed for handling deletions"))
   (:documentation "Represents a 1:N processing node in the graph"))
 
 (defclass aggregate-node (node)
   ()
   (:documentation "Represents an M:N processing node in the graph"))
 
-(defgeneric update (node items)
-  (:documentation "Processes a node in the pipeline graph"))
+(defclass sink-node (node)
+  ()
+  (:documentation "Represents a sink node in the graph, e.g. for writing files to disk"))
 
-(defgeneric transform (node item)
-  (:documentation "Transforms a single item for a transform node"))
+(defgeneric update (node changes)
+  (:documentation "Updates a node in the pipeline graph in response to changes"))
 
-(defgeneric aggregate (node items)
-  (:documentation "Aggregates items into one or more result items"))
+(defgeneric transform (node path item)
+  (:documentation "Updates a single item in response to a change for a transform node"))
 
-;; TODO: This doesn't really work for copied files on Windows--the "modified time" is copied with the file, so it looks like an old file, even if it's new...
-(defmethod update ((node transform-node) items)
-  ;; Only update newer items
-  (let ((updated nil)
-	(results nil)
-	(cached-results (node-cached-result node)))
-    (loop for item in items do
-      (let* ((id (item-id item))
-	     (cached-result (find-if (lambda (i) (equal (item-id i) id))
-				     cached-results)))
-	(if (and cached-result
-		 (<= (item-time item) (item-time cached-result)))
-	    (push cached-result results)
-	    (progn (setf updated t)
-		   (push (transform node item) results)))))
-    (if updated
-	(setf (node-cached-result node) results)
-	cached-results)))
+(defgeneric aggregate (node changes)
+  (:documentation "Updates items based on changes and aggregates the items into one or more result items"))
 
-(defmethod update ((node aggregate-node) items)
-  ;; Always re-run aggregations--UPDATE wouldn't be called on this node without upstream changes
-  (setf (node-cached-result node) (aggregate node items)))
+(defun resolve-results (old-paths results snapshot)
+  "Removes OLD-PATHS from SNAPSHOT, adds RESULTS, and returns list of changes"
+  (let ((changes nil)
+	(removed-paths (copy-list old-paths)))
+    (loop for path in old-paths do
+      (remhash path snapshot))
+    (loop for (path . item) in results do
+      (setf (gethash path snapshot) item)
+      (push (list :update path item) changes)
+      (deletef path removed-paths))
+    (loop for path in removed-paths do
+      (push (list :delete path nil) changes))
+    changes))
+
+(defmethod update ((node transform-node) changes)
+  (let ((snapshot (node-snapshot node))
+	(cached-outputs (transform-node-cached-outputs node)))
+    (loop for (event input-path input-item) in changes
+	  nconc (resolve-results (gethash input-path cached-outputs)
+				 (ecase event
+				   (:update (transform node input-path input-item))
+				   (:delete nil))
+				 snapshot))))
+
+(defmethod update ((node aggregate-node) changes)
+  (let ((snapshot (node-snapshot node)))
+    (resolve-results (loop for path being the hash-keys in snapshot collect path)
+		     (aggregate node changes)
+		     snapshot)))
 
 ;;; Built-in nodes
 (defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FILES source code")
 (defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
 
 ;; TODO: Should support reading bytes, strings, and objects
-(defclass read-files (aggregate-node)
-  ()
+(defclass read-files (source-node)
+  ((snapshot :initform nil
+	     :initarg :snapshot
+	     :accessor read-files-snapshot
+	     :documentation "Previuos directory snapshot"))
   (:documentation "Source node for reading input files from *SOURCE-DIRECTORY*"))
+
+(defmethod update ((node read-node) (input-changes null))
+  (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory *source-directory*
+									   :previous-snapshot (read-files-snapshot node))
+    (setf (read-files-snapshot node) snapshot)
+    (loop for (event . path) in changes do
 
 (defmethod aggregate ((node read-files) (items null))
   (let ((result nil))
@@ -264,13 +293,13 @@
 			     (1+ (get-universal-time)))
 	do (when (or (not node-time)
 		     (> input-time node-time))
-	     (let* ((cached-results (node-cached-result node))
+	     (let* ((snapshots (node-snapshot node))
 		    (input (loop for parent in parents
-				 append (node-cached-result (rest (assoc parent *name-to-nodes*)))))
+				 append (node-snapshot (rest (assoc parent *name-to-nodes*)))))
 		    (results (update node input)))
 	       (format t "~a: ~s -> ~s~%" name (mapcar #'item-id input) (mapcar #'item-id results))
-	       (when (results-differ-p cached-results results)
-		 (setf (node-cached-result node) results)
+	       (when (results-differ-p snapshots results)
+		 (setf (node-snapshot node) results)
 		 (setf (node-time node) (get-universal-time)))))))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
