@@ -21,39 +21,13 @@
 	   (setf ,place ,cell))
        nil)))
 
-;;; File system
-;; (defun for-each-file-in-directory (directory function &key (process-file-p (constantly t)))
-;;   "Calls FUNCTION on each file (directly) within BASE-DIRECTORY, optionally filtering out files"
-;;   (loop for file in (uiop:directory-files directory)
-;; 	do (when (funcall process-file-p file)
-;; 	     (funcall function file))))
-
-;; (defun for-each-file (base-directory function &key (process-directory-p (constantly t)) (process-file-p (constantly t)))
-;;   "Calls FUNCTION for each file under (the entire tree of) BASE-DIRECTORY, optionally filtering out directories and files"
-;;   (uiop:collect-sub*directories base-directory
-;; 				process-directory-p
-;; 				process-directory-p
-;; 				(lambda (directory)
-;; 				  (for-each-file-in-directory directory
-;; 							      function
-;; 							      :process-file-p process-file-p))))
-
 (defun relevant-directory-p (directory)
   "Returns non-NIL if the directory is 'relevant', meaning not part of source control, etc."
   (let ((directory-name (first (last (pathname-directory directory)))))
     (not (equal directory-name ".git"))))
 
-;; (defun path-relative-to (base-directory pathname)
-;;   (enough-namestring (truename pathname) (truename base-directory)))
-
 ;;; Processing and dependency graph
 (defclass item ()
-  ;; ((id :documentation "Path/id for the item"
-  ;;      :accessor item-id
-  ;;      :initarg :id)
-   ;; (time :documentation "'Last modified time' for this item"
-   ;; 	 :accessor item-time
-   ;; 	 :initarg :time)
    ((content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now--actuallly, maybe not. Could just have multiple reader nodes
 	    :accessor item-content
 	    :initarg :content
@@ -76,13 +50,14 @@
   ((input :documentation "Name or pattern indicating inputs"
 	  :accessor node-input
 	  :initarg :input)
-   ;; (time :documentation "Time of last (actual) update"
-   ;; 	 :accessor node-time
-   ;; 	 :initform nil)
-   (snapshot :documentation "If available, cached snapshot (hash of path to item) from previous runs"
+   (cached-result :documentation "Cached result of the most recent update"
+		  :accessor node-cached-result
+		  :initarg :cached-result
+		  :initform nil)
+   (snapshot :documentation "Cached snapshot (hash of pathstring to item) from previous updates"
 	     :accessor node-snapshot
 	     :initarg :snapshot
-	     :initform nil))
+	     :initform (make-hash-table :test 'equal)))
   (:documentation "Represents an arbitrary node in the processing graph"))
 
 (defclass source-node (node)
@@ -130,11 +105,12 @@
   (let ((snapshot (node-snapshot node))
 	(cached-outputs (transform-node-cached-outputs node)))
     (loop for (event input-path input-item) in changes
-	  nconc (resolve-results (gethash input-path cached-outputs)
-				 (ecase event
-				   (:update (transform node input-path input-item))
-				   (:delete nil))
-				 snapshot))))
+	  nconc (resolve-results
+		 (gethash input-path cached-outputs)
+		 (ecase event
+		   (:update (multiple-value-list (transform node input-path input-item)))
+		   (:delete nil))
+		 snapshot))))
 
 (defmethod update ((node aggregate-node) changes)
   (let ((snapshot (node-snapshot node)))
@@ -143,60 +119,48 @@
 		     snapshot)))
 
 ;;; Built-in nodes
-(defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-DIRECTORY source code")
+(defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FROM-DIRECTORY source code")
 (defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
 
-(defclass read-directory (source-node)
-  ((previous-snapshot :initform nil
-		      :initarg :previous-snapshot
-		      :accessor read-directory-previous-snapshot
+(defclass read-from-directory (source-node)
+  ((directory-snapshot :initform nil
+		      :initarg :directory-snapshot
+		      :accessor read-from-directory-directory-snapshot
 		      :documentation "Previous directory snapshot"))
   (:documentation "Source node for enumerating files from *SOURCE-DIRECTORY*"))
 
-(defmethod update ((node read-directory) (input-changes null))
+(defmethod update ((node read-from-directory) (input-changes null))
   (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory
 					   *source-directory*
-					   :previous-snapshot (read-directory-previous-snapshot node))
-    (setf (read-directory-previous-snapshot node) snapshot)
-    (loop for (event . path) in changes
+					   :previous-snapshot (read-from-directory-directory-snapshot node))
+    (setf (read-from-directory-directory-snapshot node) snapshot)
+    (loop for (event pathname) in changes
 	  collect (list (if (equal event :delete) :delete :update)
-			path
+			(uiop/pathname:unix-namestring pathname)
 			nil))))
 
+(defclass write-to-directory (sink-node)
+  ()
+  (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
+
+(defmethod update ((node write-to-directory) input-changes)
+  (loop for (event path item) in input-changes do
+    (ecase event
+      (:update (format t "UPDATE: ~a: ~a~%" path (item-content item)))
+      (:delete (format t "DELETE: ~a~%" path)))))
+
 ;; TODO: Should support reading bytes, strings, and objects
-;; (defclass read-as-text (transform-node)
-;;   (:documentation "Source node for reading files as text from *SOURCE-DIRECTORY*"))
+(defclass read-as-string (transform-node)
+  ()
+  (:documentation "Source node for reading files as text from *SOURCE-DIRECTORY*"))
 
-;; (defmethod transform ((node read-as-text) path item)
-;;   (with-open-file (stream (merge-pathnames path *source-directory*))
-;;     (read
-
-;; (defmethod aggregate ((node read-files) (items null))
-;;   (let ((result nil))
-;;     (for-each-file *source-directory*
-;; 		   (lambda (file)
-;; 		     (push (make-instance 'item
-;; 					  :id (path-relative-to *source-directory*
-;; 								file)
-;; 					  :time (file-write-date file)
-;; 					  :content (with-open-file (stream file)
-;; 						     (read stream)))
-;; 			   result)))
-;;     result))
-
-;; ;; TODO: Needs to be aggregate in order to catch deleted files!
-;; (defclass write-files (transform-node)
-;;   ()
-;;   (:documentation "Sink node for writing items out to *DESTINATION-DIRECTORY*"))
-
-;; (defmethod transform ((node write-files) (item item))
-;;   ;; TODO: Handle subdirectories!
-;;   (let ((output-pathname (merge-pathnames (item-id item) *destination-directory*)))
-;;     (with-open-file (stream output-pathname
-;; 			    :direction :output
-;; 			    :if-exists :supersede)
-;;       (write-string (item-content item) stream)))
-;;   item)
+(defmethod transform ((node read-as-string) pathstring item)
+  (cons pathstring
+	(make-instance 'item
+		       :content
+		       (uiop:read-file-string (merge-pathnames
+					       (uiop/pathname:parse-unix-namestring pathstring)
+					       *source-directory*)))))
 
 ;;; HTML template nodes
 ;; (defclass list-to-html (transform-node)
@@ -209,109 +173,83 @@
 ;;   item)
 
 ;;; Processing pipeline graph
-;; (defparameter *pipeline*
-;;   '((read-files . (list-to-html))
-;;     (list-to-html . (write-files)))
-;;   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
+(defparameter *pipeline*
+  '((read-from-directory . (read-as-string))
+    (read-as-string . (write-to-directory)))
+  "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
-;; (defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
-;; (defvar *reversed-pipeline* nil "*PIPELINE* with edges reversed, to find nodes' prerequisites")
+(defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
+(defvar *reversed-pipeline* nil "*PIPELINE* with edges reversed, to find nodes' prerequisites")
 
-;; (defun pipeline-edges (pipeline)
-;;   "Returns a (new) list of edges in PIPELINE"
-;;   (let ((edges nil))
-;;     (loop for row in pipeline
-;; 	  for from = (first row)
-;; 	  do (loop for to in (rest row)
-;; 		   do (push (cons from to) edges)))
-;;     edges))
+(defun pipeline-edges (pipeline)
+  "Returns a (new) list of edges in PIPELINE"
+  (let ((edges nil))
+    (loop for row in pipeline
+	  for from = (first row)
+	  do (loop for to in (rest row)
+		   do (push (cons from to) edges)))
+    edges))
 
-;; (defun pipeline-nodes (pipeline)
-;;   "Returns a (new) list of nodes in PIPELINE"
-;;   (let ((nodes nil))
-;;     (loop for row in pipeline do
-;;       (pushnew (first row) nodes)
-;;       (loop for child in (rest row) do
-;; 	(pushnew child nodes)))
-;;     nodes))
+(defun pipeline-nodes (pipeline)
+  "Returns a (new) list of nodes in PIPELINE"
+  (let ((nodes nil))
+    (loop for row in pipeline do
+      (pushnew (first row) nodes)
+      (loop for child in (rest row) do
+	(pushnew child nodes)))
+    nodes))
 
-;; (defun pipeline-sort (pipeline)
-;;   "Returns a topological sort of the nodes in PIPELINE"
-;;   (let ((edges (pipeline-edges pipeline))
-;; 	(start-nodes (pipeline-nodes pipeline))
-;; 	(sorted-nodes nil))
-;;     (loop for edge in edges do (deletef (rest edge) start-nodes))
-;;     (loop while start-nodes do
-;;       (let ((node (pop start-nodes)))
-;; 	(push node sorted-nodes)
-;; 	(loop for edge in (loop for edge in edges
-;; 			     if (equal node (first edge))
-;; 			       collect edge)
-;; 	      for to = (rest edge)
-;; 	      do (deletef edge edges)
-;; 		 (unless (find-if (lambda (e) (equal to (rest e))) edges)
-;; 		   (push to start-nodes)))))
-;;     (if edges
-;; 	(error "PIPELINE has a cycle!")
-;; 	(nreverse sorted-nodes))))
+(defun pipeline-sort (pipeline)
+  "Returns a topological sort of the nodes in PIPELINE"
+  (let ((edges (pipeline-edges pipeline))
+	(start-nodes (pipeline-nodes pipeline))
+	(sorted-nodes nil))
+    (loop for edge in edges do (deletef (rest edge) start-nodes))
+    (loop while start-nodes do
+      (let ((node (pop start-nodes)))
+	(push node sorted-nodes)
+	(loop for edge in (loop for edge in edges
+			     if (equal node (first edge))
+			       collect edge)
+	      for to = (rest edge)
+	      do (deletef edge edges)
+		 (unless (find-if (lambda (e) (equal to (rest e))) edges)
+		   (push to start-nodes)))))
+    (if edges
+	(error "PIPELINE has a cycle!")
+	(nreverse sorted-nodes))))
 
-;; ;;; TODO: Instead of doing this, attach parents directly to the NODE objects
-;; (defun pipeline-reverse (pipeline)
-;;   "Takes PIPELINE as list of (PARENT . (CHILD1 ...)) and returns a list of (CHILD . (PARENT1 ...))"
-;;   (let ((edges (pipeline-edges pipeline))
-;; 	(result nil))
-;;     (loop for (parent . child) in edges do
-;;       (let ((row (assoc child result)))
-;; 	(if row
-;; 	    (append-itemf parent row)
-;; 	    (push (list child parent) result))))
-;;     result))
+;;; TODO: Instead of doing this, attach parents directly to the NODE objects
+(defun pipeline-reverse (pipeline)
+  "Takes PIPELINE as list of (PARENT . (CHILD1 ...)) and returns a list of (CHILD . (PARENT1 ...))"
+  (let ((edges (pipeline-edges pipeline))
+	(result nil))
+    (loop for (parent . child) in edges do
+      (let ((row (assoc child result)))
+	(if row
+	    (append-itemf parent row)
+	    (push (list child parent) result))))
+    result))
 
-;; (defun initialize-pipeline ()
-;;   "Initializes the processing graph from *PIPELINE*"
-;;   ;; TODO: Eventually, results should be persisted to disk and loaded here
-;;   (setf *name-to-nodes* (loop for name in (pipeline-sort *pipeline*)
-;; 			      collect (cons name (make-instance name))))
-;;   (setf *reversed-pipeline* (pipeline-reverse *pipeline*)))
+(defun initialize-pipeline ()
+  "Initializes the processing graph from *PIPELINE*"
+  ;; TODO: Eventually, results should be persisted to disk and loaded here
+  (setf *name-to-nodes* (loop for name in (pipeline-sort *pipeline*)
+			      collect (cons name (make-instance name))))
+  (setf *reversed-pipeline* (pipeline-reverse *pipeline*)))
 
-;; (defun newest-item-time (items)
-;;   "Returns the newest ITEM-TIME in ITEMS"
-;;   (reduce #'max (mapcar #'item-time items) :initial-value 0))
-
-;; (defun results-differ-p (old new)
-;;   "Returns non-NIL if result set NEW is newer than result set OLD (either contains newer files, or file set is different)"
-;;   (if (eql old new)
-;;       nil
-;;       (or (let ((newest-old (newest-item-time old))
-;; 		(newest-new (newest-item-time new)))
-;; 	    (> newest-new newest-old))
-;; 	  (let ((ids-old (mapcar #'item-id old))
-;; 		(ids-new (mapcar #'item-id new)))
-;; 	    (set-difference ids-old ids-new :test 'equal)))))
-
-;; (defun run-pipeline ()
-;;   "Runs the given pipeline"
-;;   (loop for (name . node) in *name-to-nodes*
-;; 	for parents = (rest (assoc name *reversed-pipeline*))
-;; 	for node-time = (node-time node)
-;; 	for input-time = (if parents
-;; 			     (reduce #'max
-;; 				     (mapcar #'node-time
-;; 					     ;; TODO: This could be avoided by linking nodes instead of names!
-;; 					     (mapcar (lambda (parent) (rest (assoc parent *name-to-nodes*)))
-;; 						     parents))
-;; 				     :initial-value 0)
-;; 			     (1+ (get-universal-time)))
-;; 	do (when (or (not node-time)
-;; 		     (> input-time node-time))
-;; 	     (let* ((snapshots (node-snapshot node))
-;; 		    (input (loop for parent in parents
-;; 				 append (node-snapshot (rest (assoc parent *name-to-nodes*)))))
-;; 		    (results (update node input)))
-;; 	       (format t "~a: ~s -> ~s~%" name (mapcar #'item-id input) (mapcar #'item-id results))
-;; 	       (when (results-differ-p snapshots results)
-;; 		 (setf (node-snapshot node) results)
-;; 		 (setf (node-time node) (get-universal-time)))))))
+(defun run-pipeline ()
+  "Runs the given pipeline"
+  (loop for (name . node) in *name-to-nodes*
+	do (setf (node-cached-result node) nil))
+  (loop with name-to-results = (make-hash-table)
+	for (name . node) in *name-to-nodes*
+	for parent-names = (rest (assoc name *reversed-pipeline*))
+	for input-changes = (loop for parent-name in parent-names
+				  for parent = (rest (assoc parent-name *name-to-nodes*))
+				  nconc (node-cached-result parent))
+	for output-changes = (update node input-changes)
+	do (setf (node-cached-result node) output-changes)))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
