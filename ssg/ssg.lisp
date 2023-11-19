@@ -57,9 +57,14 @@
 ;; 		 :metadata (item-metadata item)))
 
 (defclass node ()
-  ((input :documentation "Name or pattern indicating inputs"
-	  :accessor node-input
-	  :initarg :input)
+  ((include :documentation "Function taking a UNIX-style pathstring, returning non-NIL if the item should be included"
+	  :accessor node-include
+	    :initarg :include
+	    :initform (constantly t))
+   (exclude :documentation "Function taking a UNIX-style pathstring, returning non-NIL if the item should be excluded"
+	    :accessor node-exclude
+	    :initarg :exclude
+	    :initform (constantly nil))
    (cached-result :documentation "Cached result of the most recent update"
 		  :accessor node-cached-result
 		  :initarg :cached-result
@@ -90,6 +95,14 @@
   ()
   (:documentation "Represents a sink node in the graph, e.g. for writing files to disk"))
 
+(defun filter-changes (node changes)
+  "Filters CHANGES based on the node's include/exclude filters"
+  (with-accessors ((include node-include) (exclude node-exclude)) node
+    (loop for (event path item) in changes
+	  if (and (funcall include path)
+		  (not (funcall exclude path)))
+	    collect (list event path item))))
+
 (defgeneric update (node changes)
   (:documentation "Updates a node in the pipeline graph in response to changes"))
 
@@ -114,6 +127,9 @@
       (push (list :delete path nil) changes))
     changes))
 
+(defmethod update :around ((node node) changes)
+  (call-next-method node (filter-changes node changes)))
+
 (defmethod update ((node transform-node) changes)
   (let ((snapshot (node-snapshot node))
 	(cached-outputs (transform-node-cached-outputs node)))
@@ -135,6 +151,14 @@
 		     (aggregate node changes)
 		     snapshot)))
 
+;;; Filtering helpers
+(defun create-type-filter (type)
+  "Creates a pathstring filter for TYPE"
+  (lambda (pathstring)
+    (let* ((pathname (uiop:parse-unix-namestring pathstring))
+	   (item-type (pathname-type pathname)))
+      (string= type item-type))))
+
 ;;; Built-in nodes
 (defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FROM-DIRECTORY source code")
 (defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
@@ -146,7 +170,7 @@
 		      :documentation "Previous directory snapshot"))
   (:documentation "Source node for enumerating files from *SOURCE-DIRECTORY*"))
 
-(defmethod update ((node read-from-directory) (input-changes null))
+(defmethod update ((node read-from-directory) input-changes)
   (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory
 					   *source-directory*
 					   :previous-snapshot (read-from-directory-directory-snapshot node))
