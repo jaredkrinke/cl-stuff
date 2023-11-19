@@ -49,12 +49,11 @@
 	     :initform nil))
   (:documentation "Represents an item, optionally with metadata"))
 
-;; (defun item-clone (item)
-;;   "Clones an item (shallowly) by duplicating its properties"
-;;   (make-instance 'item
-;; 		 ;; :id (item-id item)
-;; 		 :content (item-content item)
-;; 		 :metadata (item-metadata item)))
+(defun item-clone (item)
+  "Clones an item (shallowly) by duplicating its properties"
+  (make-instance 'item
+		 :content (item-content item)
+		 :metadata (item-metadata item)))
 
 (defclass node ()
   ((include :documentation "Function taking a UNIX-style pathstring, returning non-NIL if the item should be included"
@@ -151,13 +150,19 @@
 		     (aggregate node changes)
 		     snapshot)))
 
-;;; Filtering helpers
+;;; Node helpers
 (defun create-type-filter (type)
   "Creates a pathstring filter for TYPE"
   (lambda (pathstring)
     (let* ((pathname (uiop:parse-unix-namestring pathstring))
 	   (item-type (pathname-type pathname)))
       (string= type item-type))))
+
+(defun change-type (pathstring new-type)
+  "Modifies PAHTHSTRING so that it has type NEW-TYPE"
+  (let* ((pathname (uiop:parse-unix-namestring pathstring))
+	 (new-pathname (merge-pathnames (make-pathname :type new-type) pathname)))
+    (uiop:unix-namestring new-pathname)))
 
 ;;; Built-in nodes
 (defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FROM-DIRECTORY source code")
@@ -213,19 +218,22 @@
 					       *source-directory*)))))
 
 ;;; HTML template nodes
-;; (defclass list-to-html (transform-node)
-;;   ()
-;;   (:documentation "Transform that converts HTML in list form to an HTML string"))
+(defclass list-to-html (transform-node)
+  ((include :initform (create-type-filter "lhtml")))
+  (:documentation "Transform that converts HTML in list form to an HTML string"))
 
-;; (defmethod transform ((node list-to-html) (item item))
-;;   ;; TODO: This needs to clone the item instead of overwriting a property!
-;;   (setf (item-content item) (html (item-content item)))
-;;   item)
+(defmethod transform ((node list-to-html) pathstring input-item)
+  ;; TODO: This needs to clone the item instead of overwriting a property!
+  (let ((item (item-clone input-item)))
+    (setf (item-content item) (html (read-from-string (item-content item))))
+    (cons (change-type pathstring "html")
+	  item)))
 
 ;;; Processing pipeline graph
 (defparameter *pipeline*
   '((read-from-directory . (read-as-string))
-    (read-as-string . (write-to-directory)))
+    (read-as-string . (list-to-html))
+    (list-to-html . (write-to-directory)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
 (defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
