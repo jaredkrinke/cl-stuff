@@ -70,6 +70,8 @@
 		   :documentation "Cached hash of input to output(s), needed for handling deletions"))
   (:documentation "Represents a 1:N processing node in the graph"))
 
+;; TODO: Consider adding direct-transform-node and content-transform-node subclasses
+
 (defclass aggregate-node (node)
   ()
   (:documentation "Represents an M:N processing node in the graph"))
@@ -94,6 +96,7 @@
     (loop for path in old-paths do
       (remhash path snapshot))
     (loop for (path . item) in results do
+      ;; TODO: Check for differences?
       (setf (gethash path snapshot) item)
       (push (list :update path item) changes)
       (deletef path removed-paths))
