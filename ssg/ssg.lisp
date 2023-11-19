@@ -21,6 +21,16 @@
 	   (setf ,place ,cell))
        nil)))
 
+;;; Logging
+(defvar *debug* nil "Non-nil enables debug logging")
+
+(defmacro when-logging (&body body)
+  `(and *debug* (progn ,@body)))
+
+(defmacro spew (format-string &rest arguments)
+  `(when-logging (format t ,format-string ,@arguments)))
+
+;;; TODO: Needed?
 (defun relevant-directory-p (directory)
   "Returns non-NIL if the directory is 'relevant', meaning not part of source control, etc."
   (let ((directory-name (first (last (pathname-directory directory)))))
@@ -111,8 +121,12 @@
 	  nconc (resolve-results
 		 (gethash input-path cached-outputs)
 		 (ecase event
-		   (:update (multiple-value-list (transform node input-path input-item)))
-		   (:delete nil))
+		   (:update
+		    (let ((outputs (multiple-value-list (transform node input-path input-item))))
+		      (setf (gethash input-path cached-outputs) (mapcar #'first outputs))
+		      outputs))
+		   (:delete
+		    nil))
 		 snapshot))))
 
 (defmethod update ((node aggregate-node) changes)
@@ -148,9 +162,18 @@
 
 (defmethod update ((node write-to-directory) input-changes)
   (loop for (event path item) in input-changes do
-    (ecase event
-      (:update (format t "UPDATE: ~a: ~a~%" path (item-content item)))
-      (:delete (format t "DELETE: ~a~%" path)))))
+    (let ((output-path (merge-pathnames (uiop:parse-unix-namestring path)
+					*destination-directory*)))
+      (ecase event
+	(:update
+	 (ensure-directories-exist output-path)
+	 (with-open-file (stream output-path
+				 :direction :output
+				 :if-exists :supersede)
+	   ;; TODO: Support other formats
+	   (write-string (item-content item) stream)))
+	(:delete
+	 (delete-file output-path))))))
 
 ;; TODO: Should support reading bytes, strings, and objects
 (defclass read-as-string (transform-node)
@@ -252,7 +275,13 @@
 				  for parent = (rest (assoc parent-name *name-to-nodes*))
 				  nconc (node-cached-result parent))
 	for output-changes = (update node input-changes)
-	do (setf (node-cached-result node) output-changes)))
+	do (when-logging
+	     (spew "~a:~%" name)
+	     (loop for (event path) in input-changes do (spew "  ~a:~a~%" event path))
+	     (spew " -->~%")
+	     (loop for (event path) in output-changes do (spew "  ~a:~a~%" event path))
+	     (spew "~%"))
+	   (setf (node-cached-result node) output-changes)))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
