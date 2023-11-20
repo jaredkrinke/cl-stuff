@@ -50,7 +50,6 @@
 	    :initarg :content
 	    :accessor item-content
 	    :initform nil)
-   ;; TODO: a-list or subclassing?
    (metadata :documentation "Properties a-list associated with this item"
 	     :accessor item-metadata
 	     :initarg :metadata
@@ -79,7 +78,6 @@ Supported types:
 
 * :STRING
 * :OBJECT"
-  ;; TODO: Consider using generic for these coercions
   (let ((content (item-content item)))
     (ecase type
       (:string (read-content-as-string content))
@@ -210,7 +208,7 @@ Supported types:
 * (:TYPE \"foo\" matches items base on file type (\"foo\" in this example)"
   ;; TODO: Some way to match based on path?
   ;; TODO: Compile these!
-  ;; TODO: Allow list of these
+  ;; TODO: Allow list of these (would these be intersection or union?)
   (cond ((null filter) nil)
 	((eql filter t) t)
 	((eql filter :rest) (error "Unexpected :REST (exclusion?) filter!"))
@@ -291,7 +289,6 @@ Supported types:
   (:documentation "Transform that converts HTML in list form to an HTML string"))
 
 (defmethod transform ((node list-to-html) pathstring input-item)
-  ;; TODO: This needs to clone the item instead of overwriting a property!
   (let ((item (item-clone input-item)))
     (setf (item-content item) (html (item-read-content item :type :object)))
     (cons (change-type pathstring "html")
@@ -299,7 +296,8 @@ Supported types:
 
 ;;; Processing pipeline graph
 (defparameter *pipeline*
-  '((read-from-directory . (list-to-html write-to-directory))
+  '((read-from-directory . (list-to-html
+			    write-to-directory))
     (list-to-html . (write-to-directory)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
