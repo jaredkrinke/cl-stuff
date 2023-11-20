@@ -4,9 +4,9 @@
 (in-package :ssg)
 
 ;;; Utilities
-(defmacro deletef (object place)
+(defmacro deletef (object place &key (test 'eql))
   "(Destructively) DELETE OBJECT from PLACE"
-  `(setf ,place (delete ,object ,place)))
+  `(setf ,place (delete ,object ,place :test ,test)))
 
 (defmacro with-gensyms ((&rest names) &body body)
   `(let ,(loop for name in names collect `(,name (gensym)))
@@ -21,13 +21,21 @@
 	   (setf ,place ,cell))
        nil)))
 
+(defmacro equal-accessors ((a b) &rest accessors)
+  "Returns non-NIL if A and B have ACCESSORS that are all EQUAL"
+  `(and ,@(loop for accessor in accessors
+	       collect `(equal (,accessor ,a)
+			       (,accessor ,b)))))
+
 ;;; Logging
 (defvar *debug* nil "Non-nil enables debug logging")
 
 (defmacro when-logging (&body body)
+  "Run BODY only when *DEBUG* is non-NIL"
   `(and *debug* (progn ,@body)))
 
 (defmacro spew (format-string &rest arguments)
+  "Log only when *DEBUG* is non-NIL"
   `(when-logging (format t ,format-string ,@arguments)))
 
 ;;; TODO: Needed?
@@ -38,7 +46,7 @@
 
 ;;; Processing and dependency graph
 (defclass item ()
-   ((content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now--actuallly, maybe not. Could just have multiple reader nodes
+  ((content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now--actuallly, maybe not. Could just have multiple reader nodes
 	    :accessor item-content
 	    :initarg :content
 	    :initform nil)
@@ -49,6 +57,13 @@
 	     :initform nil))
   (:documentation "Represents an item, optionally with metadata"))
 
+(defun items-equal (a b)
+  "Returns non-NIL if A and B are equivalent"
+  ;; Note: this isn't 100% accurate due to how a-lists shadow properties, but should be fine for detecting identical processing output
+  (equal-accessors (a b)
+		   item-content
+		   item-metadata))
+
 (defun item-clone (item)
   "Clones an item (shallowly) by duplicating its properties"
   (make-instance 'item
@@ -56,22 +71,25 @@
 		 :metadata (item-metadata item)))
 
 (defclass node ()
-  ((include :documentation "Function taking a UNIX-style pathstring, returning non-NIL if the item should be included"
-	  :accessor node-include
+  ((include :documentation "Filters for items to include (see FILTER-TEST for syntax)"
+	    :accessor node-include
 	    :initarg :include
-	    :initform (constantly t))
-   (exclude :documentation "Function taking a UNIX-style pathstring, returning non-NIL if the item should be excluded"
+	    :initform :rest)
+   (exclude :documentation "Filters for items to exclude (see FILTER-TEST for syntax); note: this overrides INCLUDE"
 	    :accessor node-exclude
 	    :initarg :exclude
-	    :initform (constantly nil))
-   (cached-result :documentation "Cached result of the most recent update"
-		  :accessor node-cached-result
-		  :initarg :cached-result
-		  :initform nil)
-   (snapshot :documentation "Cached snapshot (hash of pathstring to item) from previous updates"
-	     :accessor node-snapshot
-	     :initarg :snapshot
-	     :initform (make-hash-table :test 'equal)))
+	    :initform nil)
+   (input :documentation "Pending changes coming into this node"
+	  :accessor node-input
+	  :initform nil)
+   (cached-input :documentation "Cached input (hash table of path to item) to this node"
+		 :accessor node-cached-input
+		 :initarg :cached-input
+		 :initform (make-hash-table :test 'equal))
+   (cached-output :documentation "Cached ouput (hash table of path to item) from this node"
+		  :accessor node-cached-output
+		  :initarg :cached-output
+		  :initform (make-hash-table :test 'equal)))
   (:documentation "Represents an arbitrary node in the processing graph"))
 
 (defclass source-node (node)
@@ -81,7 +99,7 @@
 (defclass transform-node (node)
   ((cached-outputs :initform (make-hash-table :test 'equal)
 		   :accessor transform-node-cached-outputs
-		   :documentation "Cached hash of input to output(s), needed for handling deletions"))
+		   :documentation "Cached hash table of input to output(s), needed for handling deletions"))
   (:documentation "Represents a 1:N processing node in the graph"))
 
 ;; TODO: Consider adding direct-transform-node and content-transform-node subclasses
@@ -94,70 +112,92 @@
   ()
   (:documentation "Represents a sink node in the graph, e.g. for writing files to disk"))
 
-(defun filter-changes (node changes)
-  "Filters CHANGES based on the node's include/exclude filters"
-  (with-accessors ((include node-include) (exclude node-exclude)) node
-    (loop for (event path item) in changes
-	  if (and (funcall include path)
-		  (not (funcall exclude path)))
-	    collect (list event path item))))
-
-(defgeneric update (node changes)
+(defgeneric update (node)
   (:documentation "Updates a node in the pipeline graph in response to changes"))
 
 (defgeneric transform (node path item)
   (:documentation "Updates a single item in response to a change for a transform node"))
 
-(defgeneric aggregate (node changes)
-  (:documentation "Updates items based on changes and aggregates the items into one or more result items"))
+(defgeneric aggregate (node snapshot)
+  (:documentation "Aggregates the input items into one or more result items"))
 
-(defun resolve-results (old-paths results snapshot)
-  "Removes OLD-PATHS from SNAPSHOT, adds RESULTS, and returns list of changes"
+(defmethod update :after ((node node))
+  (setf (node-input node) nil))
+
+(defun resolve-results (old-paths results cached-output)
+  "Removes OLD-PATHS from CACHED-OUTPUT, adds RESULTS, and returns list of changes"
   (let ((changes nil)
 	(removed-paths (copy-list old-paths)))
-    (loop for path in old-paths do
-      (remhash path snapshot))
-    (loop for (path . item) in results do
-      ;; TODO: Check for differences?
-      (setf (gethash path snapshot) item)
-      (push (list :update path item) changes)
-      (deletef path removed-paths))
+    (loop for (path . item) in results
+	  for old-item = (gethash path cached-output)
+	  do (deletef path removed-paths :test 'equal) ; Not deleted
+	     ;; Only report :UPDATE when there's actually a change
+	     (unless (and old-item (items-equal item old-item))
+	       (setf (gethash path cached-output) item)
+	       (push (list :update path item) changes)))
+
+    ;; Any previous paths that aren't seen have been :DELETED
     (loop for path in removed-paths do
+      (remhash path cached-output)
       (push (list :delete path nil) changes))
     changes))
 
-(defmethod update :around ((node node) changes)
-  (call-next-method node (filter-changes node changes)))
-
-(defmethod update ((node transform-node) changes)
-  (let ((snapshot (node-snapshot node))
+(defmethod update ((node transform-node))
+  (let ((changes (node-input node))
+	(cached-output (node-cached-output node))
 	(cached-outputs (transform-node-cached-outputs node)))
+    ;; Transform nodes process items individually; collect *all* outputs
     (loop for (event input-path input-item) in changes
 	  nconc (resolve-results
 		 (gethash input-path cached-outputs)
 		 (ecase event
 		   (:update
+		    ;; Process one item (note: it may result in multiple outputs)
 		    (let ((outputs (multiple-value-list (transform node input-path input-item))))
 		      (setf (gethash input-path cached-outputs) (mapcar #'first outputs))
 		      outputs))
 		   (:delete
 		    nil))
-		 snapshot))))
+		 cached-output))))
 
-(defmethod update ((node aggregate-node) changes)
-  (let ((snapshot (node-snapshot node)))
-    (resolve-results (loop for path being the hash-keys in snapshot collect path)
-		     (aggregate node changes)
-		     snapshot)))
+(defmethod update ((node aggregate-node))
+  (let ((changes (node-input node))
+	(cached-input (node-cached-input node))
+	(cached-output (node-cached-output node)))
+    ;; Update cached input
+    (loop for (event path item) in changes do
+      (ecase event
+	(:update (setf (gethash path cached-input) item))
+	(:delete (remhash path cached-input))))
+    (resolve-results (loop for path being the hash-keys in cached-output collect path)
+		     (aggregate node cached-input)
+		     cached-output)))
+
+(defun filter-test (change filter)
+  "Returns non-NIL if CHANGE matches FILTER; supported filters:
+
+* NIL matches nothing
+* T matches everything
+* :REST matches anything that wasn't specifically included by another sibling
+* (:TYPE \"foo\" matches items base on file type (\"foo\" in this example)"
+  ;; TODO: Some way to match based on path?
+  ;; TODO: Compile these!
+  ;; TODO: Allow list of these
+  (cond ((null filter) nil)
+	((eql filter t) t)
+	((eql filter :rest) (error "Unexpected :REST (exclusion?) filter!"))
+	((listp filter)
+	 (ecase (first filter)
+	   (:type (equal (second filter)
+			 (pathname-type (uiop:parse-unix-namestring (second change)))))))
+	(t (error "Unexpected filter: ~a" filter))))
+
+(defun should-include (change node)
+  "Returns non-NIL if CHANGE should be processed by NODE (based on include/exclude filters)"
+  (and (filter-test change (node-include node))
+       (not (filter-test change (node-exclude node)))))
 
 ;;; Node helpers
-(defun create-type-filter (type)
-  "Creates a pathstring filter for TYPE"
-  (lambda (pathstring)
-    (let* ((pathname (uiop:parse-unix-namestring pathstring))
-	   (item-type (pathname-type pathname)))
-      (string= type item-type))))
-
 (defun change-type (pathstring new-type)
   "Modifies PAHTHSTRING so that it has type NEW-TYPE"
   (let* ((pathname (uiop:parse-unix-namestring pathstring))
@@ -169,17 +209,17 @@
 (defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
 
 (defclass read-from-directory (source-node)
-  ((directory-snapshot :initform nil
-		      :initarg :directory-snapshot
-		      :accessor read-from-directory-directory-snapshot
-		      :documentation "Previous directory snapshot"))
+  ((snapshot :initform nil
+	     :initarg :snapshot
+	     :accessor read-from-directory-snapshot
+	     :documentation "Previous directory snapshot"))
   (:documentation "Source node for enumerating files from *SOURCE-DIRECTORY*"))
 
-(defmethod update ((node read-from-directory) input-changes)
+(defmethod update ((node read-from-directory))
   (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory
 					   *source-directory*
-					   :previous-snapshot (read-from-directory-directory-snapshot node))
-    (setf (read-from-directory-directory-snapshot node) snapshot)
+					   :previous-snapshot (read-from-directory-snapshot node))
+    (setf (read-from-directory-snapshot node) snapshot)
     (loop for (event pathname) in changes
 	  collect (list (if (equal event :delete) :delete :update)
 			(uiop/pathname:unix-namestring pathname)
@@ -189,8 +229,8 @@
   ()
   (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
 
-(defmethod update ((node write-to-directory) input-changes)
-  (loop for (event path item) in input-changes do
+(defmethod update ((node write-to-directory))
+  (loop for (event path item) in (node-input node) do
     (let ((output-path (merge-pathnames (uiop:parse-unix-namestring path)
 					*destination-directory*)))
       (ecase event
@@ -219,7 +259,7 @@
 
 ;;; HTML template nodes
 (defclass list-to-html (transform-node)
-  ((include :initform (create-type-filter "lhtml")))
+  ((include :initform '(:type "lhtml")))
   (:documentation "Transform that converts HTML in list form to an HTML string"))
 
 (defmethod transform ((node list-to-html) pathstring input-item)
@@ -232,7 +272,7 @@
 ;;; Processing pipeline graph
 (defparameter *pipeline*
   '((read-from-directory . (read-as-string))
-    (read-as-string . (list-to-html))
+    (read-as-string . (list-to-html write-to-directory))
     (list-to-html . (write-to-directory)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
@@ -296,24 +336,47 @@
 			      collect (cons name (make-instance name))))
   (setf *reversed-pipeline* (pipeline-reverse *pipeline*)))
 
+(defun propagate-changes (changes children)
+  "Propagates CHANGES to CHILDREN, respecting filters"
+  ;; Separate children into "accepts :REST" vs. "explicit opt-in"
+  (let ((explicit-children nil)
+	(rest-children nil))
+    (loop for child in children do
+      (if (equal (node-include child) :rest)
+	  (push child rest-children)
+	  (push child explicit-children)))
+    ;; Actually decide which children to propagate to
+    (loop for change in changes
+	  for taken = nil
+	  do ;; Check for an explicit inclusion
+	     (loop for child in explicit-children
+		   do (when (should-include change child)
+			(setf taken t)
+			(push change (node-input child))))
+	     (unless taken
+	       (loop for child in rest-children
+		     do (push change (node-input child)))))))
+
+(defun log-update (name input-changes output-changes)
+  "Logs input and output from node update"
+  (spew "~a:~%" name)
+  (loop for (event path) in input-changes do (spew "  ~a:~a~%" event path))
+  (spew " -->~%")
+  (loop for (event path) in output-changes do (spew "  ~a:~a~%" event path))
+  (spew "~%"))
+
 (defun run-pipeline ()
-  "Runs the given pipeline"
+"Runs the given pipeline"
   (loop for (name . node) in *name-to-nodes*
-	do (setf (node-cached-result node) nil))
-  (loop with name-to-results = (make-hash-table)
-	for (name . node) in *name-to-nodes*
-	for parent-names = (rest (assoc name *reversed-pipeline*))
-	for input-changes = (loop for parent-name in parent-names
-				  for parent = (rest (assoc parent-name *name-to-nodes*))
-				  nconc (node-cached-result parent))
-	for output-changes = (update node input-changes)
-	do (when-logging
-	     (spew "~a:~%" name)
-	     (loop for (event path) in input-changes do (spew "  ~a:~a~%" event path))
-	     (spew " -->~%")
-	     (loop for (event path) in output-changes do (spew "  ~a:~a~%" event path))
-	     (spew "~%"))
-	   (setf (node-cached-result node) output-changes)))
+	for children = (rest (assoc name *pipeline*))
+	for input-changes = (node-input node)
+	for output-changes = (update node)
+	do ;; Debug logging
+	   (when-logging (log-update name input-changes output-changes))
+	   ;; Push changes to children
+	   (propagate-changes output-changes
+			      (loop for child-name in children
+				    collect (rest (assoc child-name *name-to-nodes*))))))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
