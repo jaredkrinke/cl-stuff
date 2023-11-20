@@ -4,7 +4,7 @@
 (in-package :ssg)
 
 ;;; Utilities
-(defmacro deletef (object place &key (test 'eql))
+(defmacro deletef (object place &key (test ''eql))
   "(Destructively) DELETE OBJECT from PLACE"
   `(setf ,place (delete ,object ,place :test ,test)))
 
@@ -46,9 +46,9 @@
 
 ;;; Processing and dependency graph
 (defclass item ()
-  ((content :documentation "Raw content of this item" ; TODO: This should eventually be a byte array, but will be a string for now--actuallly, maybe not. Could just have multiple reader nodes
-	    :accessor item-content
+  ((content :documentation "Raw content of this item; see ITEM-READ-CONTENT for supported types"
 	    :initarg :content
+	    :accessor item-content
 	    :initform nil)
    ;; TODO: a-list or subclassing?
    (metadata :documentation "Properties a-list associated with this item"
@@ -56,6 +56,34 @@
 	     :initarg :metadata
 	     :initform nil))
   (:documentation "Represents an item, optionally with metadata"))
+
+(defgeneric read-content-as-string (content)
+  (:documentation "Reads CONTENT as a STRING"))
+
+(defmethod read-content-as-string ((content string))
+  content)
+
+(defmethod read-content-as-string ((content pathname))
+  (uiop:read-file-string content))
+
+(defgeneric read-content-as-object (content)
+  (:documentation "Reads CONTENT as a Lisp object"))
+
+(defmethod read-content-as-object ((content pathname))
+  (uiop:safe-read-file-form content))
+
+(defun item-read-content (item &key (type :string))
+  "Reads ITEM's content. The underlying slot can be of type (OR PATHNAME STRING), and this will be read/coerced into TYPE.
+
+Supported types:
+
+* :STRING
+* :OBJECT"
+  ;; TODO: Consider using generic for these coercions
+  (let ((content (item-content item)))
+    (ecase type
+      (:string (read-content-as-string content))
+      (:object (read-content-as-object content)))))
 
 (defun items-equal (a b)
   "Returns non-NIL if A and B are equivalent"
@@ -224,11 +252,27 @@
     (loop for (event pathname) in changes
 	  collect (list (if (equal event :delete) :delete :update)
 			(uiop/pathname:unix-namestring pathname)
-			nil))))
+			(make-instance 'item
+				       :content (merge-pathnames (parse-namestring pathname)
+								 *source-directory*))))))
 
 (defclass write-to-directory (sink-node)
   ()
   (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
+
+(defgeneric write-content (content output-path)
+  (:documentation "Writes CONTENT to OUTPUT-PATH, specialized on the type of CONTENT"))
+
+(defmethod write-content ((content pathname) output-path)
+  (spew "Copying ~a to ~a...~%" content output-path)
+  (uiop:copy-file content output-path))
+
+(defmethod write-content ((content string) output-path)
+  (spew "Writing to ~a...~%" output-path)
+  (with-open-file (stream output-path
+			  :direction :output
+			  :if-exists :supersede)
+    (write-string content stream)))
 
 (defmethod update ((node write-to-directory))
   (loop for (event path item) in (node-input node) do
@@ -237,26 +281,9 @@
       (ecase event
 	(:update
 	 (ensure-directories-exist output-path)
-	 (with-open-file (stream output-path
-				 :direction :output
-				 :if-exists :supersede)
-	   ;; TODO: Support other formats
-	   (write-string (item-content item) stream)))
+	 (write-content (item-content item) output-path))
 	(:delete
 	 (delete-file output-path))))))
-
-;; TODO: Should support reading bytes, strings, and objects
-(defclass read-as-string (transform-node)
-  ()
-  (:documentation "Source node for reading files as text from *SOURCE-DIRECTORY*"))
-
-(defmethod transform ((node read-as-string) pathstring item)
-  (cons pathstring
-	(make-instance 'item
-		       :content
-		       (uiop:read-file-string (merge-pathnames
-					       (uiop/pathname:parse-unix-namestring pathstring)
-					       *source-directory*)))))
 
 ;;; HTML template nodes
 (defclass list-to-html (transform-node)
@@ -266,14 +293,13 @@
 (defmethod transform ((node list-to-html) pathstring input-item)
   ;; TODO: This needs to clone the item instead of overwriting a property!
   (let ((item (item-clone input-item)))
-    (setf (item-content item) (html (read-from-string (item-content item))))
+    (setf (item-content item) (html (item-read-content item :type :object)))
     (cons (change-type pathstring "html")
 	  item)))
 
 ;;; Processing pipeline graph
 (defparameter *pipeline*
-  '((read-from-directory . (read-as-string))
-    (read-as-string . (list-to-html write-to-directory))
+  '((read-from-directory . (list-to-html write-to-directory))
     (list-to-html . (write-to-directory)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
