@@ -21,12 +21,6 @@
 	   (setf ,place ,cell))
        nil)))
 
-(defmacro equal-accessors ((a b) &rest accessors)
-  "Returns non-NIL if A and B have ACCESSORS that are all EQUAL"
-  `(and ,@(loop for accessor in accessors
-	       collect `(equal (,accessor ,a)
-			       (,accessor ,b)))))
-
 ;;; Logging
 (defvar *debug* nil "Non-nil enables debug logging")
 
@@ -86,9 +80,11 @@ Supported types:
 (defun items-equal (a b)
   "Returns non-NIL if A and B are equivalent"
   ;; Note: this isn't 100% accurate due to how a-lists shadow properties, but should be fine for detecting identical processing output
-  (equal-accessors (a b)
-		   item-content
-		   item-metadata))
+  (and (equal (item-metadata a) (item-metadata b))
+       (equal (item-content a) (item-content b))
+
+       ;; Treat PATHNAME content as different because it's just the path and doesn't reflect actual content
+       (not (typep (item-content a) 'pathname))))
 
 (defun item-clone (item)
   "Clones an item (shallowly) by duplicating its properties"
