@@ -236,31 +236,41 @@ Supported types:
 
 ;; TODO: Consider renaming to "from-source" and "to-destination"
 (defclass read-from-directory (source-node)
-  ((snapshot :initform nil
+  ((directory :initarg :directory
+	      :accessor read-from-directory-directory
+	      :documentation "Source directory for this node")
+   (snapshot :initform nil
 	     :initarg :snapshot
 	     :accessor read-from-directory-snapshot
 	     :documentation "Previous directory snapshot"))
-  (:documentation "Source node for enumerating files from *SOURCE-DIRECTORY*"))
+  (:documentation "Source node for enumerating files from a directory"))
 
 (defmethod update ((node read-from-directory))
-  (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory
-					   *source-directory*
-					   :previous-snapshot (read-from-directory-snapshot node))
-    (setf (read-from-directory-snapshot node) snapshot)
-    (loop for (event pathname) in changes
-	  collect (list (if (equal event :delete) :delete :update)
-			(uiop/pathname:unix-namestring pathname)
-			(make-instance 'item
-				       :content (merge-pathnames (parse-namestring pathname)
-								 *source-directory*))))))
+  (with-slots (directory read-from-directory-directory) node
+    (multiple-value-bind (changes snapshot) (dirmon:get-changes-in-directory
+					     directory
+					     :previous-snapshot (read-from-directory-snapshot node))
+      (setf (read-from-directory-snapshot node) snapshot)
+      (loop for (event pathname) in changes
+	    collect (list (if (equal event :delete) :delete :update)
+			  (uiop/pathname:unix-namestring pathname)
+			  (make-instance 'item
+					 :content (merge-pathnames (parse-namestring pathname)
+								   directory)))))))
+
+(defclass source (read-from-directory)
+  ((directory :initform *source-directory*))
+  (:documentation "Source node for reading from *SOURCE-DIRECTORY*"))
 
 (defclass suppress-output (sink-node)
   ()
   (:documentation "Sink node that just drops files"))
 
 (defclass write-to-directory (sink-node)
-  ()
-  (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
+  ((directory :initarg :directory
+	      :accessor write-to-directory-directory
+	      :documentation "Output directory for this node"))
+  (:documentation "Sink node for writing to a directory"))
 
 (defgeneric write-content (content output-path)
   (:documentation "Writes CONTENT to OUTPUT-PATH, specialized on the type of CONTENT"))
@@ -277,15 +287,20 @@ Supported types:
     (write-string content stream)))
 
 (defmethod update ((node write-to-directory))
-  (loop for (event path item) in (node-input node) do
-    (let ((output-path (merge-pathnames (uiop:parse-unix-namestring path)
-					*destination-directory*)))
-      (ecase event
-	(:update
-	 (ensure-directories-exist output-path)
-	 (write-content (item-content item) output-path))
-	(:delete
-	 (delete-file output-path))))))
+  (with-slots (directory write-to-directory-directory) node
+    (loop for (event path item) in (node-input node) do
+      (let ((output-path (merge-pathnames (uiop:parse-unix-namestring path)
+					  directory)))
+	(ecase event
+	  (:update
+	   (ensure-directories-exist output-path)
+	   (write-content (item-content item) output-path))
+	  (:delete
+	   (delete-file output-path)))))))
+
+(defclass destination (write-to-directory)
+  ((directory :initform *destination-directory*))
+  (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
 
 ;;; HTML template nodes
 (defclass list-to-html (transform-node)
@@ -478,19 +493,19 @@ Supported types:
 
 ;;; Processing pipeline graph
 (defparameter *pipeline*
-  '((read-from-directory . (front-matter
-			    template-misc
-			    write-to-directory))
+  '((source . (front-matter
+	       template-misc
+	       destination))
     (front-matter . (markdown
 		     index-posts))
     (markdown . (template-post
 		 template-feed))
     (index-posts . (template-indexes
 		    template-feed))
-    (template-post . (write-to-directory))
-    (template-indexes . (write-to-directory))
-    (template-feed . (write-to-directory))
-    (template-misc . (write-to-directory)))
+    (template-post . (destination))
+    (template-indexes . (destination))
+    (template-feed . (destination))
+    (template-misc . (destination)))
   "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
 
 (defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
