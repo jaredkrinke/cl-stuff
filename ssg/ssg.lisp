@@ -234,7 +234,6 @@ Supported types:
 (defparameter *source-directory* #p"input/" "Directory to read input files from for the READ-FROM-DIRECTORY source code")
 (defparameter *destination-directory* #p"output/" "Directory to write files out to for the WRITE-FILES node")
 
-;; TODO: Consider renaming to "from-source" and "to-destination"
 (defclass read-from-directory (source-node)
   ((directory :initarg :directory
 	      :accessor read-from-directory-directory
