@@ -1,4 +1,4 @@
-(defpackage ssg
+(defpackage #:ssg
   (:use :cl))
 
 (in-package :ssg)
@@ -612,15 +612,16 @@ Note: the result is a topologically sorted list of node instances."
 
 (defun run (&optional (pipeline *pipeline*))
   "Runs PIPELINE"
-  (loop for node in pipeline
-	for children = (node-children node)
-	for input-changes = (node-input node)
-	for output-changes = (update node)
-	do ;; Debug logging
-	   (when-logging (log-update node input-changes output-changes))
-	   ;; Push changes to children
-	   (propagate-changes output-changes
-			      (node-children node))))
+  (loop for node in pipeline do
+    (let ((output-changes (update node)))
+      ;; Debug logging
+      (when-logging
+	(log-update node
+		    (node-input node)
+		    output-changes))
+      ;; Push changes to children
+      (propagate-changes output-changes
+			 (node-children node)))))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
