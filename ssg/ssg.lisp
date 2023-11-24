@@ -102,6 +102,10 @@ Supported types:
 	    :accessor node-exclude
 	    :initarg :exclude
 	    :initform nil)
+   (children :documentation "List of child nodes in the pipeline"
+	     :accessor node-children
+	     :initarg :children
+	     :initform nil)
    (input :documentation "Pending changes coming into this node"
 	  :accessor node-input
 	  :initform nil)
@@ -356,7 +360,6 @@ Supported types:
 (defmethod transform ((node markdown) path item)
   (let ((post-path (extract-post-path path)))
     (uiop:with-temporary-file (:pathname html-pathname)
-      ;; TODO: Could this be done with an in-memory stream?
       (uiop:with-temporary-file (:pathname input-pathname)
 	(write-string-to-file (item-read-content item :type :string) input-pathname)
 	(uiop:run-program (format nil
@@ -368,11 +371,11 @@ Supported types:
 			     :content (uiop:read-file-string html-pathname)
 			     :metadata (item-metadata item)))))))
 
-(defclass template-post (transform-node)
+(defclass template-posts (transform-node)
   ((include :initform '(:type "content-html")))
   (:documentation "Reads HTML post content and applies templates, resulting in final HTML"))
 
-(defmethod transform ((node template-post) path item)
+(defmethod transform ((node template-posts) path item)
   (let ((post-path (extract-post-path path)))
     (uiop:with-temporary-file (:pathname html-pathname)
       (uiop:with-temporary-file (:pathname input-pathname)
@@ -491,47 +494,20 @@ Supported types:
 		  (item-from-file css-pathname))))))
 
 ;;; Processing pipeline graph
-(defparameter *pipeline*
-  '((source . (front-matter
-	       template-misc
-	       destination))
-    (front-matter . (markdown
-		     index-posts))
-    (markdown . (template-post
-		 template-feed))
-    (index-posts . (template-indexes
-		    template-feed))
-    (template-post . (destination))
-    (template-indexes . (destination))
-    (template-feed . (destination))
-    (template-misc . (destination)))
-  "Processing pipeline as a directed acyclic graph, represented as list of (NODE-NAME DOWNSTREAM-NODE-NAME-1 ...)")
+(defun add-edge (node child)
+  "Adds an edge from NODE to CHILD"
+  (push child (node-children node)))
 
-(defvar *name-to-nodes* nil "A-list mapping node names to the nodes themselves")
-(defvar *reversed-pipeline* nil "*PIPELINE* with edges reversed, to find nodes' prerequisites")
+(defun get-edges (nodes)
+  "Returns a list of edges from the graph represented by NODES"
+  (loop for node in nodes
+	nconc (loop for child in (node-children node)
+		    collect (cons node child))))
 
-(defun pipeline-edges (pipeline)
-  "Returns a (new) list of edges in PIPELINE"
-  (let ((edges nil))
-    (loop for row in pipeline
-	  for from = (first row)
-	  do (loop for to in (rest row)
-		   do (push (cons from to) edges)))
-    edges))
-
-(defun pipeline-nodes (pipeline)
-  "Returns a (new) list of nodes in PIPELINE"
-  (let ((nodes nil))
-    (loop for row in pipeline do
-      (pushnew (first row) nodes)
-      (loop for child in (rest row) do
-	(pushnew child nodes)))
-    nodes))
-
-(defun pipeline-sort (pipeline)
-  "Returns a topological sort of the nodes in PIPELINE"
-  (let ((edges (pipeline-edges pipeline))
-	(start-nodes (pipeline-nodes pipeline))
+(defun pipeline-sort (nodes)
+  "Returns a topological sort of the graph represented by NODES"
+  (let ((edges (get-edges nodes))
+	(start-nodes (copy-list nodes))
 	(sorted-nodes nil))
     (loop for edge in edges do (deletef (rest edge) start-nodes))
     (loop while start-nodes do
@@ -548,24 +524,62 @@ Supported types:
 	(error "PIPELINE has a cycle!")
 	(nreverse sorted-nodes))))
 
-;;; TODO: Instead of doing this, attach parents directly to the NODE objects
-(defun pipeline-reverse (pipeline)
-  "Takes PIPELINE as list of (PARENT . (CHILD1 ...)) and returns a list of (CHILD . (PARENT1 ...))"
-  (let ((edges (pipeline-edges pipeline))
-	(result nil))
-    (loop for (parent . child) in edges do
-      (let ((row (assoc child result)))
-	(if row
-	    (append-itemf parent row)
-	    (push (list child parent) result))))
-    result))
+(defstruct node-info
+  node
+  parents
+  children)
 
-(defun initialize-pipeline ()
-  "Initializes the processing graph from *PIPELINE*"
-  ;; TODO: Eventually, results should be persisted to disk and loaded here
-  (setf *name-to-nodes* (loop for name in (pipeline-sort *pipeline*)
-			      collect (cons name (make-instance name))))
-  (setf *reversed-pipeline* (pipeline-reverse *pipeline*)))
+(defun make-pipeline (node-graph)
+  "Creates a pipeline from the description, NODE-GRAPH. Each item in the (quoted) list describes a node in the following format:
+
+(NAME &KEY (:PARENTS NIL)
+           (:CHILDREN NIL)
+      &ALLOW-OTHER-KEYS)
+
+The named arguments are passed to (MAKE-INSTANCE 'NAME), except for :PARENTS and :CHILDREN which are used to construct edges in the graph. Either :PARENTS or :CHILDREN is supported; use whichever seems most convenient or easiest to understand.
+
+Note: the result is a topologically sorted list of node instances."
+  (let ((pipeline nil)
+	(name-to-info (make-hash-table)))
+    ;; Initialize nodes
+    (loop for (name . arguments) in node-graph do
+      (let ((actual-arguments (copy-list arguments)))
+	(remf actual-arguments :parents)
+	(remf actual-arguments :children)
+	;; TODO: Arguments need to be evaluated, right?
+	(let ((node (apply #'make-instance (cons name actual-arguments))))
+	  (push node pipeline)
+	  (setf (gethash name name-to-info)
+		(make-node-info :parents (getf arguments :parents)
+				:children (getf arguments :children)
+				:node node)))))
+    ;; Add edges
+    (loop for info being the hash-values in name-to-info do
+      (let ((node (node-info-node info)))
+	(loop for parent-name in (node-info-parents info) do
+	  (add-edge (node-info-node (gethash parent-name name-to-info))
+		    node))
+	(loop for child-name in (node-info-children info) do
+	  (add-edge node
+		    (node-info-node (gethash child-name name-to-info))))))
+    ;; Sort
+    (pipeline-sort pipeline)))
+
+(defvar *pipeline*
+  (make-pipeline '((source :children (front-matter
+				      template-misc
+				      destination))
+		   (front-matter :children (markdown
+					    index-posts))
+		   (markdown :children (template-posts
+					template-feed))
+		   (index-posts :children (template-indexes
+					   template-feed))
+		   (template-posts :children (destination))
+		   (template-indexes :children (destination))
+		   (template-feed :children (destination))
+		   (template-misc :children (destination))
+		   (destination))))
 
 (defun propagate-changes (changes children)
   "Propagates CHANGES to CHILDREN, respecting filters"
@@ -588,26 +602,25 @@ Supported types:
 	       (loop for child in rest-children
 		     do (push change (node-input child)))))))
 
-(defun log-update (name input-changes output-changes)
+(defun log-update (node input-changes output-changes)
   "Logs input and output from node update"
-  (spew "~a:~%" name)
+  (spew "~a:~%" node)
   (loop for (event path) in input-changes do (spew "  ~a:~a~%" event path))
   (spew " -->~%")
   (loop for (event path) in output-changes do (spew "  ~a:~a~%" event path))
   (spew "~%"))
 
-(defun run-pipeline ()
-"Runs the given pipeline"
-  (loop for (name . node) in *name-to-nodes*
-	for children = (rest (assoc name *pipeline*))
+(defun run (&optional (pipeline *pipeline*))
+  "Runs PIPELINE"
+  (loop for node in pipeline
+	for children = (node-children node)
 	for input-changes = (node-input node)
 	for output-changes = (update node)
 	do ;; Debug logging
-	   (when-logging (log-update name input-changes output-changes))
+	   (when-logging (log-update node input-changes output-changes))
 	   ;; Push changes to children
 	   (propagate-changes output-changes
-			      (loop for child-name in children
-				    collect (rest (assoc child-name *name-to-nodes*))))))
+			      (node-children node))))
 
 ;;; TODO: Is there a Common Lisp Markdown parser that supports tables and GitHub's header-to-id logic? Ideally, one that has an intermediate (possibly list) representation I could use for handling links
 
