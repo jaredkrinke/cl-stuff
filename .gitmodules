@@ -91,3 +91,12 @@
 [submodule "deps/documentation-utils"]
 	path = deps/documentation-utils
 	url = https://github.com/Shinmera/documentation-utils.git
+[submodule "deps/3bmd"]
+	path = deps/3bmd
+	url = https://github.com/3b/3bmd.git
+[submodule "deps/trivial-with-current-source-form"]
+	path = deps/trivial-with-current-source-form
+	url = https://github.com/scymtym/trivial-with-current-source-form.git
+[submodule "deps/esrap"]
+	path = deps/esrap
+	url = https://github.com/scymtym/esrap.git
