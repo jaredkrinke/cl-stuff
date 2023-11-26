@@ -338,7 +338,7 @@ Supported types:
 ;;; Blog nodes
 (defclass front-matter (transform-node)
   ((include :initform '(:type "md")))
-  (:documentation "Extracts front matter from Markdown files"))
+  (:documentation "Extracts front matter from Markdown files and adds it (along with :PATH-TO-ROOT) to item metadata"))
 
 (defparameter *front-matter-pattern* (ppcre:create-scanner "^'''\\r?\\n(.*?\\r?\\n)'''\\r?\\n"
 							   :single-line-mode t))
