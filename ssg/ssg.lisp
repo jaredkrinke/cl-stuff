@@ -343,12 +343,24 @@ Supported types:
 (defparameter *front-matter-pattern* (ppcre:create-scanner "^'''\\r?\\n(.*?\\r?\\n)'''\\r?\\n"
 							   :single-line-mode t))
 
+(defun create-path-to-root (pathstring)
+  "Creates a pathstring to the root from PATHSTRING"
+  (let* ((up "../")
+	 (up-length (length up))
+	 (depth (length (rest (pathname-directory (uiop:parse-unix-namestring pathstring)))))
+	 (length (* up-length depth))
+	 (result (make-string length)))
+    (loop for i from 0 upto (1- length) do
+      (setf (elt result i) (elt up (mod i up-length))))
+    result))
+
 (defmethod transform ((node front-matter) pathstring input-item)
   (let* ((item (item-clone input-item))
 	 (content (item-read-content item :type :string)))
     (multiple-value-bind (start end starts ends) (funcall *front-matter-pattern* content 0 (length content))
       (when start
 	(let ((front-matter (subseq content (elt starts 0) (elt ends 0))))
+	  (push (cons :path-to-root (create-path-to-root pathstring)) (item-metadata item))
 	  (push (cons :front-matter (read-from-string front-matter)) (item-metadata item))
 	  (setf (item-content item) (subseq content end)))))
     (cons pathstring item)))
@@ -396,7 +408,7 @@ Supported types:
   (cond ((null tree) nil)
 	((consp tree)
 	 (ecase (first tree)
-	   (:root (cons :html (mapcar #'document-to-lhtml (rest tree))))
+	   (:fragment (cons :fragment (mapcar #'document-to-lhtml (rest tree))))
 	   (:heading (cons (intern (format nil "H~a" (getf (rest tree) :level)) 'keyword)
 			   (mapcar #'document-to-lhtml (getf (rest tree) :contents))))
 	   (:paragraph (cons :p (mapcar #'document-to-lhtml (rest tree))))
@@ -408,7 +420,7 @@ Supported types:
 (defmethod transform ((node markdown) pathstring input-item)
   (let* ((item (item-clone input-item))
 	 (content (item-read-content item :type :string))
-	 (document-raw (cons :root (3bmd-grammar:parse-doc content)))
+	 (document-raw (cons :fragment (3bmd-grammar:parse-doc content)))
 	 (document (fix-relative-links document-raw))
 	 (lhtml (document-to-lhtml document)))
     (setf (item-content item) lhtml)
@@ -509,29 +521,17 @@ Note: the result is a topologically sorted list of node instances."
     ;; Sort
     (pipeline-sort pipeline)))
 
-(defvar *pipeline*
-  (make-pipeline '((source :children (front-matter
-				      log-items))
-		   (front-matter :children (markdown))
-		   (markdown :children (template-posts))
-		   (template-posts :children (lhtml))
-		   (lhtml :children (log-items destination))
-		   (log-items)
-		   (destination))))
-  ;; (make-pipeline '((source :children (front-matter
-  ;; 				      template-misc
-  ;; 				      destination))
-  ;; 		   (front-matter :children (markdown
-  ;; 					    index-posts))
-  ;; 		   (markdown :children (template-posts
-  ;; 					template-feed))
-  ;; 		   (index-posts :children (template-indexes
-  ;; 					   template-feed))
-  ;; 		   (template-posts :children (destination))
-  ;; 		   (template-indexes :children (destination))
-  ;; 		   (template-feed :children (destination))
-  ;; 		   (template-misc :children (destination))
-  ;; 		   (destination))))
+(defparameter *pipeline*
+  '((source :children (front-matter
+		       log-items))
+    (front-matter :children (markdown))
+    (markdown :children (template-posts))
+    (template-posts :children (lhtml))
+    (lhtml :children (log-items destination))
+    (log-items)
+    (destination)))
+
+(defvar *pipeline-instance* nil)
 
 (defun propagate-changes (changes children)
   "Propagates CHANGES to CHILDREN, respecting filters"
@@ -562,7 +562,10 @@ Note: the result is a topologically sorted list of node instances."
   (loop for (event path) in output-changes do (spew "  ~a:~a~%" event path))
   (spew "~%"))
 
-(defun run (&optional (pipeline *pipeline*))
+(defun reset ()
+  (setf *pipeline-instance* (make-pipeline *pipeline*)))
+
+(defun run (&optional (pipeline *pipeline-instance*))
   "Runs PIPELINE"
   (loop for node in pipeline do
     (let ((output-changes (update node)))
