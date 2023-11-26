@@ -60,11 +60,19 @@
 (defmethod read-content-as-string ((content pathname))
   (uiop:read-file-string content))
 
+(defmethod read-content-as-string ((content cons))
+  (let ((stream (make-string-output-stream)))
+    (prin1 content stream)
+    (get-output-stream-string stream)))
+
 (defgeneric read-content-as-object (content)
   (:documentation "Reads CONTENT as a Lisp object"))
 
 (defmethod read-content-as-object ((content pathname))
   (uiop:safe-read-file-form content))
+
+(defmethod read-content-as-object ((content list))
+  content)
 
 (defun item-read-content (item &key (type :string))
   "Reads ITEM's content. The underlying slot can be of type (OR PATHNAME STRING), and this will be read/coerced into TYPE.
@@ -305,193 +313,129 @@ Supported types:
   ((directory :initform *destination-directory*))
   (:documentation "Sink node for writing files to *DESTINATION-DIRECTORY*"))
 
+;;; Debugging nodes
+(defclass log-items (transform-node)
+  ()
+  (:documentation "Debugging node that logs items"))
+
+(defmethod transform ((node log-items) pathstring item)
+  (format t "~a:~%" pathstring)
+  (format t "~s~%" (item-metadata item))
+  (format t "~a~%" (item-read-content item :type :string))
+  (cons pathstring item))
+
 ;;; HTML template nodes
-(defclass list-to-html (transform-node)
+(defclass lhtml (transform-node)
   ((include :initform '(:type "lhtml")))
   (:documentation "Transform that converts HTML in list form to an HTML string"))
 
-(defmethod transform ((node list-to-html) pathstring input-item)
+(defmethod transform ((node lhtml) pathstring input-item)
   (let ((item (item-clone input-item)))
     (setf (item-content item) (html (item-read-content item :type :object)))
     (cons (change-type pathstring "html")
 	  item)))
 
-;;; make-blog nodes
-(defun write-string-to-file (string filespec)
-  "Writes STRING to FILESPEC"
-  (with-open-file (stream filespec :direction :output :if-exists :supersede)
-    (write-string string stream)))
-
-(defun item-from-string (string)
-  (make-instance 'item :content string))
-
-(defun item-from-file (filespec)
-  (item-from-string (uiop:read-file-string filespec)))
-
-(defun extract-post-path (path)
-  (subseq path 0 (position #\. path :from-end t)))
-
+;;; Blog nodes
 (defclass front-matter (transform-node)
   ((include :initform '(:type "md")))
-  (:documentation "Reads Markdown posts and outputs metadata and Markdown content"))
+  (:documentation "Extracts front matter from Markdown files"))
 
-(defmethod transform ((node front-matter) path item)
-  (let ((post-path (extract-post-path path)))
-    (uiop:with-temporary-file (:pathname metadata-pathname)
-      (uiop:with-temporary-file (:pathname markdown-pathname)
-	;; TODO: Could this be done with an in-memory stream?
-	(uiop:with-temporary-file (:pathname input-pathname)
-	  (write-string-to-file (item-read-content item :type :string) input-pathname)
-	  (uiop:run-program (format nil
-				    "leano front-matter.js ~a ~a.html ~a ~a"
-				    input-pathname
-				    post-path
-				    metadata-pathname
-				    markdown-pathname))
-	  (cons (format nil "~a.content-md" post-path)
-		(make-instance 'item
-			       :content (uiop:read-file-string markdown-pathname)
-			       :metadata (list (cons :json (uiop:read-file-string metadata-pathname))))))))))
+(defparameter *front-matter-pattern* (ppcre:create-scanner "^'''\\r?\\n(.*?\\r?\\n)'''\\r?\\n"
+							   :single-line-mode t))
+
+(defmethod transform ((node front-matter) pathstring input-item)
+  (let* ((item (item-clone input-item))
+	 (content (item-read-content item :type :string)))
+    (multiple-value-bind (start end starts ends) (funcall *front-matter-pattern* content 0 (length content))
+      (when start
+	(let ((front-matter (subseq content (elt starts 0) (elt ends 0))))
+	  (push (cons :front-matter (read-from-string front-matter)) (item-metadata item))
+	  (setf (item-content item) (subseq content end)))))
+    (cons pathstring item)))
 
 (defclass markdown (transform-node)
-  ((include :initform '(:type "content-md")))
-  (:documentation "Reads Markdown content and outputs HTML content"))
+  ((include :initform '(:type "md")))
+  (:documentation "Parses Markdown into a document tree"))
 
-(defmethod transform ((node markdown) path item)
-  (let ((post-path (extract-post-path path)))
-    (uiop:with-temporary-file (:pathname html-pathname)
-      (uiop:with-temporary-file (:pathname input-pathname)
-	(write-string-to-file (item-read-content item :type :string) input-pathname)
-	(uiop:run-program (format nil
-				  "deno run --allow-read --allow-write markdown.ts ~a ~a"
-				  input-pathname
-				  html-pathname))
-	(cons (format nil "~a.content-html" post-path)
-	      (make-instance 'item
-			     :content (uiop:read-file-string html-pathname)
-			     :metadata (item-metadata item)))))))
+(defun plist-replace (plist key value)
+  "Replaces the value for KEY in PLIST with VALUE; returning a new copy of PLIST"
+  (let ((plist2 (copy-tree plist)))
+    (setf (getf plist2 key) value)
+    plist2))
+
+;; TODO: Could be destructive!
+(defmacro process-tree ((var tree) &body cases)
+  "Walks TREE running CASES (a list of (TAG &BODY), where TREE is set to the matching node and the output is spliced into the tree)"
+  (with-gensyms (f)
+    `(labels ((,f (,var)
+		(cond ((null ,var) nil)
+		      ((consp ,var)
+		       (case (car ,var)
+			 ,@cases
+			 (t (cons (car ,var)
+				  (mapcar #',f (cdr ,var))))))
+		      (t ,var))))
+       (funcall #',f ,tree))))
+
+(defun fix-relative-link (href)
+  "Returns HREF, changing relative Markdown (.md) links to point to resulting HTML (.html) files"
+  (ppcre:regex-replace "^([^:]*).md(#.*)?$"
+		       href
+		       "\\1.html\\2"))
+
+(defun fix-relative-links (tree)
+  "Updates all relative links to Markdown (.md) files to point to resulting HTML (.html) files"
+  (process-tree (tree tree)
+    (:explicit-link (list :explicit-link
+			  (plist-replace (rest tree)
+					 :source
+					 (fix-relative-link (getf (rest tree) :source)))))))
+
+(defun document-to-lhtml (tree)
+  "Converts a parsed Markdown document to LHTML"
+  (cond ((null tree) nil)
+	((consp tree)
+	 (ecase (first tree)
+	   (:root (cons :html (mapcar #'document-to-lhtml (rest tree))))
+	   (:heading (cons (intern (format nil "H~a" (getf (rest tree) :level)) 'keyword)
+			   (mapcar #'document-to-lhtml (getf (rest tree) :contents))))
+	   (:paragraph (cons :p (mapcar #'document-to-lhtml (rest tree))))
+	   (:explicit-link `(:a :href ,(getf (cadr tree) :source)
+				 ,@(mapcar #'document-to-lhtml (getf (cadr tree) :label))))
+	   (:plain (mapcar #'document-to-lhtml (rest tree)))))
+	(t tree)))
+
+(defmethod transform ((node markdown) pathstring input-item)
+  (let* ((item (item-clone input-item))
+	 (content (item-read-content item :type :string))
+	 (document-raw (cons :root (3bmd-grammar:parse-doc content)))
+	 (document (fix-relative-links document-raw))
+	 (lhtml (document-to-lhtml document)))
+    (setf (item-content item) lhtml)
+    (cons (change-type pathstring "lhtml")
+	  item)))
 
 (defclass template-posts (transform-node)
-  ((include :initform '(:type "content-html")))
-  (:documentation "Reads HTML post content and applies templates, resulting in final HTML"))
+  ((include :initform '(:type "lhtml")))
+  (:documentation "Applies template to LHTML posts"))
 
-(defmethod transform ((node template-posts) path item)
-  (let ((post-path (extract-post-path path)))
-    (uiop:with-temporary-file (:pathname html-pathname)
-      (uiop:with-temporary-file (:pathname input-pathname)
-	(uiop:with-temporary-file (:pathname input-metadata-pathname)
-	  (write-string-to-file (item-read-content item :type :string) input-pathname)
-	  (write-string-to-file (rest (assoc :json (item-metadata item))) input-metadata-pathname)
-	  (uiop:run-program (format nil
-				    "leano template-post.js cache/site.json ~a ~a ~a"
-				    input-metadata-pathname
-				    input-pathname
-				    html-pathname))
-	  (cons (format nil "~a.html" post-path)
-		(item-from-file html-pathname)))))))
+(defun template-post (front-matter body)
+  (let ((title (getf front-matter :title)))
+    `(:html
+      (:head
+       (:title ,title)
+       (:body
+	(:h1 ,title)
+	(:h2 ,(getf front-matter :date))
+	,@body)))))
 
-(defclass index-posts (aggregate-node)
-  ((include :initform '(:type "content-md")))
-  (:documentation "Reads post metadata and produces an index"))
-
-(defmethod aggregate ((node index-posts) snapshot)
-  (uiop:with-temporary-file (:pathname path-pathname)
-    (uiop:with-temporary-file (:pathname json-pathname)
-      (with-open-file (path-stream path-pathname :direction :output :if-exists :supersede)
-	(with-open-file (json-stream json-pathname :direction :output :if-exists :supersede)
-	  ;; Produce a list of paths and JSON (one file per line) for consumption by script
-	  (maphash (lambda (path item)
-		     (fresh-line path-stream)
-		     (write-string path path-stream)
-		     (fresh-line json-stream)
-		     (write-string (rest (assoc :json (item-metadata item))) json-stream))
-		   snapshot)))
-      ;; Consume via script
-      (uiop:with-temporary-file (:pathname index-pathname)
-	(uiop:run-program (format nil
-				  "leano index.js ~a ~a ~a"
-				  path-pathname
-				  json-pathname
-				  index-pathname))
-	(list (cons "posts.index-json"
-		    (item-from-file index-pathname)))))))
-
-(defmacro with-temporary-directory ((name id) &body body)
-  "Runs BODY with a directory named ID bound to NAME"
-  (with-gensyms (result)
-    `(let ((,result nil)
-	   (,name (make-pathname :directory '(:relative "cache" ,id))))
-       (ensure-directories-exist ,name)
-       (setf ,result (progn ,@body))
-       (uiop:delete-directory-tree ,name :validate t)
-       ,result)))
-
-(defclass template-indexes (aggregate-node)
-  ((include :initform "posts.index-json"))
-  (:documentation "Reads index and generates HTML files for each"))
-
-(defmethod aggregate ((node template-indexes) snapshot)
-  (let ((index-item (gethash "posts.index-json" snapshot))
-	(output nil))
-    (uiop:with-temporary-file (:pathname index-pathname)
-      (with-temporary-directory (temporary-directory "tmp-index")
-	(write-string-to-file (item-read-content index-item :type :string) index-pathname)
-	(uiop:run-program (format nil
-				  "leano template-indexes.js cache/site.json ~a ~a"
-				  index-pathname
-				  temporary-directory))
-	(loop for (event file) in (dirmon:get-changes-in-directory temporary-directory) do
-	  (push (cons file
-		      (make-instance 'item
-				     :content (uiop:read-file-string
-					       (merge-pathnames (parse-namestring file)
-								temporary-directory))))
-		output)))
-      output)))
-
-(defclass template-feed (aggregate-node)
-  ((include :initform t))
-  (:documentation "Reads index and HTML content and generates an Atom feed"))
-
-(defmethod aggregate ((node template-feed) snapshot)
-  (let ((index-item (gethash "posts.index-json" snapshot)))
-    (uiop:with-temporary-file (:pathname feed-pathname)
-      (uiop:with-temporary-file (:pathname index-pathname)
-	(with-temporary-directory (temporary-directory "tmp-feed")
-	  (write-string-to-file (item-read-content index-item :type :string) index-pathname)
-	  ;; Write files to temporary directory
-	  (maphash (lambda (path item)
-		     (let ((pathname (merge-pathnames (uiop:parse-unix-namestring path)
-						      temporary-directory)))
-		       (ensure-directories-exist pathname)
-		       (write-string-to-file (item-read-content item :type :string)
-					     pathname)))
-		   snapshot)
-	  (uiop:run-program (format nil
-				    "leano template-feed.js ~a cache/site.json ~a ~a"
-				    temporary-directory
-				    index-pathname
-				    feed-pathname))
-	  (list (cons "feed.xml"
-		      (item-from-file feed-pathname))))))))
-
-(defclass template-misc (aggregate-node)
-  ((include :initform "site.json"))
-  (:documentation "Creates CSS and 404 page"))
-
-(defmethod aggregate ((node template-misc) snapshot)
-  (uiop:with-temporary-file (:pathname 404-pathname)
-    (uiop:with-temporary-file (:pathname css-pathname)
-      (uiop:run-program (format nil
-				"deno run --allow-read --allow-write template-404.ts cache/site.json ~a"
-				404-pathname))
-      (uiop:run-program (format nil
-				"deno run --allow-read --allow-write template-css.ts cache/site.json ~a"
-				css-pathname))
-      (list (cons "404.html"
-		  (item-from-file 404-pathname))
-	    (cons "css/style.css"
-		  (item-from-file css-pathname))))))
+(defmethod transform ((node template-posts) pathstring input-item)
+  (let* ((item (item-clone input-item))
+	 (content (template-post (rest (assoc :front-matter (item-metadata item)))
+				 (rest (item-read-content item :type :object)))))
+    (setf (item-content item) content)
+    (cons pathstring
+	  item)))
 
 ;;; Processing pipeline graph
 (defun add-edge (node child)
@@ -567,19 +511,27 @@ Note: the result is a topologically sorted list of node instances."
 
 (defvar *pipeline*
   (make-pipeline '((source :children (front-matter
-				      template-misc
-				      destination))
-		   (front-matter :children (markdown
-					    index-posts))
-		   (markdown :children (template-posts
-					template-feed))
-		   (index-posts :children (template-indexes
-					   template-feed))
-		   (template-posts :children (destination))
-		   (template-indexes :children (destination))
-		   (template-feed :children (destination))
-		   (template-misc :children (destination))
+				      log-items))
+		   (front-matter :children (markdown))
+		   (markdown :children (template-posts))
+		   (template-posts :children (lhtml))
+		   (lhtml :children (log-items destination))
+		   (log-items)
 		   (destination))))
+  ;; (make-pipeline '((source :children (front-matter
+  ;; 				      template-misc
+  ;; 				      destination))
+  ;; 		   (front-matter :children (markdown
+  ;; 					    index-posts))
+  ;; 		   (markdown :children (template-posts
+  ;; 					template-feed))
+  ;; 		   (index-posts :children (template-indexes
+  ;; 					   template-feed))
+  ;; 		   (template-posts :children (destination))
+  ;; 		   (template-indexes :children (destination))
+  ;; 		   (template-feed :children (destination))
+  ;; 		   (template-misc :children (destination))
+  ;; 		   (destination))))
 
 (defun propagate-changes (changes children)
   "Propagates CHANGES to CHILDREN, respecting filters"
