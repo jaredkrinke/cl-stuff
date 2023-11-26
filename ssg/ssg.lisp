@@ -403,18 +403,50 @@ Supported types:
 					 :source
 					 (fix-relative-link (getf (rest tree) :source)))))))
 
+(defun anchorify (text)
+  "Creates an anchor string from TEXT, e.g. \"This is a heading!\" becomes \"this-is-a-heading\""
+  (string-downcase
+   ; Remove trailing hyphens
+   (ppcre:regex-replace
+    "-+$"
+    ; Collapse non-alphanumeric into hyphens
+    (ppcre:regex-replace-all "[^a-zA-Z0-9]+" text "-")
+    "")))
+
+(defun get-children (lhtml)
+  "Gets child nodes for LHTML tree"
+  (loop for child on (rest lhtml) by 'cddr
+	while (keywordp (car child))
+	finally (return child)))
+
+(defun get-inner-text (tree)
+  "Walks LHTML tree TREE and concatenates text nodes"
+  (let ((stream (make-string-output-stream)))
+    (labels ((walk-tree (tree)
+	       (cond ((null tree) nil)
+		     ((stringp tree) (write-string tree stream))
+		     ((consp tree) (loop for child in (get-children tree)
+					 do (walk-tree child))))))
+      (walk-tree tree))
+    (get-output-stream-string stream)))
+
 (defun document-to-lhtml (tree)
   "Converts a parsed Markdown document to LHTML"
   (cond ((null tree) nil)
 	((consp tree)
-	 (ecase (first tree)
-	   (:fragment (cons :fragment (mapcar #'document-to-lhtml (rest tree))))
-	   (:heading (cons (intern (format nil "H~a" (getf (rest tree) :level)) 'keyword)
-			   (mapcar #'document-to-lhtml (getf (rest tree) :contents))))
-	   (:paragraph (cons :p (mapcar #'document-to-lhtml (rest tree))))
-	   (:explicit-link `(:a :href ,(getf (cadr tree) :source)
-				 ,@(mapcar #'document-to-lhtml (getf (cadr tree) :label))))
-	   (:plain (mapcar #'document-to-lhtml (rest tree)))))
+	 (let ((children (rest tree)))
+	   (macrolet ((recurse (nodes) `(mapcar #'document-to-lhtml ,nodes)))
+	     (ecase (first tree)
+	       (:fragment (cons :fragment (recurse children)))
+	       (:heading (let ((processed-children (recurse (getf children :contents))))
+			   `(,(intern (format nil "H~a" (getf children :level)) 'keyword)
+			     :name ,(anchorify (get-inner-text (cons :fragment processed-children)))
+			     ,@processed-children)))
+	       (:paragraph (cons :p (recurse children)))
+	       (:explicit-link `(:a :href ,(getf (cadr tree) :source)
+				    ,@(recurse (getf (cadr tree) :label))))
+	       (:strong (cons :strong (recurse children)))
+	       (:plain (recurse children))))))
 	(t tree)))
 
 (defmethod transform ((node markdown) pathstring input-item)
