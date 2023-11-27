@@ -21,6 +21,13 @@
 	   (setf ,place ,cell))
        nil)))
 
+(defun alist-path (alist &rest path)
+  "Returns the alist value associated with PATH (note: multiple values will be searched recursively)"
+  (loop with result = alist
+	for key in path
+	do (setf result (rest (assoc key result)))
+	finally (return result)))
+
 ;;; Logging
 (defvar *debug* nil "Non-nil enables debug logging")
 
@@ -359,9 +366,13 @@ Supported types:
 	 (content (item-read-content item :type :string)))
     (multiple-value-bind (start end starts ends) (funcall *front-matter-pattern* content 0 (length content))
       (when start
-	(let ((front-matter (subseq content (elt starts 0) (elt ends 0))))
-	  (push (cons :path-to-root (create-path-to-root pathstring)) (item-metadata item))
-	  (push (cons :front-matter (read-from-string front-matter)) (item-metadata item))
+	(let ((front-matter (subseq content (elt starts 0) (elt ends 0)))
+	      (metadata (item-metadata item)))
+	  (loop for (key value) on (read-from-string front-matter) by 'cddr
+		do (push (cons key value) metadata))
+	  (push (cons :path-to-root (create-path-to-root pathstring)) metadata)
+	  (push (cons :path-from-root (change-type pathstring "html")) metadata)
+	  (setf (item-metadata item) metadata)
 	  (setf (item-content item) (subseq content end)))))
     (cons pathstring item)))
 
@@ -446,7 +457,7 @@ Supported types:
 	       (:explicit-link `(:a :href ,(getf (cadr tree) :source)
 				    ,@(recurse (getf (cadr tree) :label))))
 	       (:strong (cons :strong (recurse children)))
-	       (:plain (recurse children))))))
+	       (:plain (cons :p (recurse children))))))) ; TODO: What is :PLAIN?
 	(t tree)))
 
 (defmethod transform ((node markdown) pathstring input-item)
@@ -459,23 +470,36 @@ Supported types:
     (cons (change-type pathstring "lhtml")
 	  item)))
 
+(defclass index-posts (aggregate-node)
+  ((include :initform '(:type "md")))
+  (:documentation "Adds all post to a list that is ordered by date"))
+
+(defmethod aggregate ((node index-posts) snapshot)
+  (let* ((posts (loop for item being the hash-values in snapshot
+		      collect (item-metadata item)))
+	 (sorted-posts (sort posts (lambda (b a) (string< (alist-path a :date)
+							  (alist-path b :date))))))
+    (list (cons "#index"
+		(make-instance 'item
+			       :content sorted-posts)))))
+
 (defclass template-posts (transform-node)
   ((include :initform '(:type "lhtml")))
   (:documentation "Applies template to LHTML posts"))
 
-(defun template-post (front-matter body)
-  (let ((title (getf front-matter :title)))
+(defun template-post (metadata body)
+  (let ((title (alist-path metadata :title)))
     `(:html
       (:head
        (:title ,title)
        (:body
 	(:h1 ,title)
-	(:h2 ,(getf front-matter :date))
+	(:h2 ,(alist-path metadata :date))
 	,@body)))))
 
 (defmethod transform ((node template-posts) pathstring input-item)
   (let* ((item (item-clone input-item))
-	 (content (template-post (rest (assoc :front-matter (item-metadata item)))
+	 (content (template-post (item-metadata item)
 				 (rest (item-read-content item :type :object)))))
     (setf (item-content item) content)
     (cons pathstring
@@ -556,8 +580,10 @@ Note: the result is a topologically sorted list of node instances."
 (defparameter *pipeline*
   '((source :children (front-matter
 		       log-items))
-    (front-matter :children (markdown))
+    (front-matter :children (markdown
+			     index-posts))
     (markdown :children (template-posts))
+    (index-posts :children (log-items))
     (template-posts :children (lhtml))
     (lhtml :children (log-items destination))
     (log-items)
