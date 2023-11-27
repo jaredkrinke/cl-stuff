@@ -483,19 +483,24 @@ Supported types:
 		(make-instance 'item
 			       :content sorted-posts)))))
 
+(defun template-base (&key body title subtitle)
+  "Creates an HTML tree for a page with BODY as content"
+  `(:html
+    (:head
+     (:title ,title)
+     (:body
+      (:h1 ,title)
+      ,@(when subtitle `((:h2 ,subtitle)))
+      ,@body))))
+
 (defclass template-posts (transform-node)
   ((include :initform '(:type "lhtml")))
   (:documentation "Applies template to LHTML posts"))
 
 (defun template-post (metadata body)
-  (let ((title (alist-path metadata :title)))
-    `(:html
-      (:head
-       (:title ,title)
-       (:body
-	(:h1 ,title)
-	(:h2 ,(alist-path metadata :date))
-	,@body)))))
+  (template-base :title (alist-path metadata :title)
+		 :subtitle (alist-path metadata :date)
+		 :body body))
 
 (defmethod transform ((node template-posts) pathstring input-item)
   (let* ((item (item-clone input-item))
