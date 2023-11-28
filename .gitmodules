@@ -103,3 +103,12 @@
 [submodule "deps/yason"]
 	path = deps/yason
 	url = https://github.com/phmarek/yason.git
+[submodule "deps/parse-number"]
+	path = deps/parse-number
+	url = https://github.com/sharplispers/parse-number.git
+[submodule "deps/cl-yaml"]
+	path = deps/cl-yaml
+	url = https://github.com/eudoxia0/cl-yaml.git
+[submodule "deps/cl-libyaml"]
+	path = deps/cl-libyaml
+	url = https://github.com/eudoxia0/cl-libyaml.git
