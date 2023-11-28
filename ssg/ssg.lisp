@@ -21,12 +21,39 @@
 	   (setf ,place ,cell))
        nil)))
 
+(defmacro gethash-or (key hash-table &key initform)
+  "Same as GETHASH, except if there is no value for KEY, INITFORM is added as the value and returned"
+  (with-gensyms (key-s hash-table-s value-s found-s)
+    `(let ((,key-s ,key)
+	   (,hash-table-s ,hash-table))
+       (multiple-value-bind (,value-s ,found-s) (gethash ,key-s ,hash-table-s)
+	 (unless ,found-s
+	   (setf ,value-s ,initform)
+	   (setf (gethash ,key-s ,hash-table-s) ,value-s))
+	 ,value-s))))
+
+(defmacro do-hash ((hash-table key value) &body body)
+  "Runs BODY with KEY and VALUE set to each pair from HASH-TABLE"
+  `(maphash (lambda (,key ,value) ,@body)
+	    ,hash-table))
+
 (defun alist-path (alist &rest path)
   "Returns the alist value associated with PATH (note: multiple values will be searched recursively)"
   (loop with result = alist
 	for key in path
 	do (setf result (rest (assoc key result)))
 	finally (return result)))
+
+(defun string-join (strings &optional (delimiter ""))
+  "Concatenates STRINGS with an optional delimiter in between"
+  (let ((stream (make-string-output-stream)))
+    (loop with first = t
+	  for string in strings
+	  do (if first
+		 (setf first nil)
+		 (write-string delimiter stream))
+	     (write-string string stream))
+    (get-output-stream-string stream)))
 
 ;;; Logging
 (defvar *debug* nil "Non-nil enables debug logging")
@@ -454,9 +481,14 @@ Supported types:
 			     :name ,(anchorify (get-inner-text (cons :fragment processed-children)))
 			     ,@processed-children)))
 	       (:paragraph (cons :p (recurse children)))
+	       (:counted-list (cons :ol (recurse children)))
+	       (:bullet-list (cons :ul (recurse children)))
+	       (:list-item (cons :li (recurse children)))
 	       (:explicit-link `(:a :href ,(getf (cadr tree) :source)
 				    ,@(recurse (getf (cadr tree) :label))))
 	       (:strong (cons :strong (recurse children)))
+	       (:emph (cons :em (recurse children)))
+	       (:code (cons :code (recurse children)))
 	       (:plain (cons :p (recurse children))))))) ; TODO: What is :PLAIN?
 	(t tree)))
 
@@ -483,15 +515,69 @@ Supported types:
 		(make-instance 'item
 			       :content sorted-posts)))))
 
-(defun template-base (&key body title subtitle)
+(defparameter *site-title* "Test Blog")
+
+(defun template-base (&key body title description keywords path-to-root)
   "Creates an HTML tree for a page with BODY as content"
-  `(:html
-    (:head
-     (:title ,title)
-     (:body
-      (:h1 ,title)
-      ,@(when subtitle `((:h2 ,subtitle)))
-      ,@body))))
+  `(:html :lang "en"
+	  (:head
+	   (:meta :charset "utf-8")
+	   (:title ,(or title *site-title*))
+	   ,@(when description `((:meta :name "description" :content ,description)))
+	   ,@(when keywords `((:meta :name "keywords" :content ,(string-join keywords ","))))
+	   (:meta :name "viewport" :content "width=device-width, initial-scale=1, shrink-to-fit=no")
+	   ;; TODO: CSS link
+	   ;; TODO: RSS link on root
+	   ;; TODO: LD-JSON stuff?
+	   (:body
+	    (:header
+	     (:h1 (:a :href ,(concatenate 'string path-to-root "index.html")
+		      ,*site-title*)))
+	    ;; TODO: Site subtitle and maybe links
+	    (:main ,@body)))))
+
+(defun partial-navigation (&key tags incomplete tag-current path-to-root)
+  "Creates a navigation partial with links to TAGS"
+  `(:nav
+    (:strong "Topics: ") ; TODO: non-breaking space?
+    ,@(loop with first = t
+	    for tag in tags
+	    for tag-string = (string-downcase (symbol-name tag))
+	    nconc `(,@(if first
+			  (setf first nil)
+			  '(" | "))
+		    ,@(if (eql tag tag-current)
+			  (list tag-string)
+			  (list (list :a :href (concatenate 'string path-to-root "posts/" tag-string "/index.html")
+				      tag-string)))))
+    ,@(when incomplete (list " | "
+			     (list :a :href (concatenate 'string path-to-root "archive.html")
+				   "..."))))) ; TODO: ellipsis
+
+(defun partial-date (date)
+  "Creates a date partial for DATE"
+  `(:p (:time :datetime ,date
+	      ,date))) ; TODO: Format date
+
+(defun partial-post-summary (&key title date description path-to-root path-from-root)
+  "Creates a partial for a summary of a post"
+  `(:article
+    ;; TODO: Resolve paths instead of just concatenating?
+    (:header (:h1 (:a :href ,(concatenate 'string path-to-root path-from-root)
+		      ,title))
+	     ,(partial-date date))
+    ,@(when description `((:p ,description)))))
+
+(defun partial-post-summary-list (posts)
+  "Creates a partial for a list of post summaries"
+  `(:ul
+    ,@(loop for post across posts
+	    collect (list :li (partial-post-summary
+			       :title (alist-path post :title)
+			       :date (alist-path post :date)
+			       :description (alist-path post :description)
+			       :path-to-root (alist-path post :path-to-root)
+			       :path-from-root (alist-path post :path-from-root))))))
 
 (defclass template-posts (transform-node)
   ((include :initform '(:type "lhtml")))
@@ -499,7 +585,7 @@ Supported types:
 
 (defun template-post (metadata body)
   (template-base :title (alist-path metadata :title)
-		 :subtitle (alist-path metadata :date)
+;		 :subtitle (alist-path metadata :date)
 		 :body body))
 
 (defmethod transform ((node template-posts) pathstring input-item)
@@ -509,6 +595,54 @@ Supported types:
     (setf (item-content item) content)
     (cons pathstring
 	  item)))
+
+(defclass template-indexes (aggregate-node)
+  ((include :initform "#index"))
+  (:documentation "Creates index and tag index pages from the page index"))
+
+(defun template-index (&key pathstring posts title tags)
+  (declare (ignore pathstring tags))
+  (template-base
+   :title title
+   :body (list (partial-post-summary-list posts))))
+
+(defun create-index-item (&key pathstring posts title tags)
+  (cons pathstring
+	(make-instance 'item
+		       :content (template-index :title title
+						:tags tags
+						:posts posts))))
+
+(defmethod aggregate ((node template-indexes) snapshot)
+  (let ((results nil)
+	(tag-to-posts (make-hash-table :test 'equal))
+	(index (item-read-content (gethash "#index" snapshot) :type :object)))
+    ;; Create vector of posts for each tag
+    (loop for metadata in index do
+      (loop for tag in (alist-path metadata :keywords) do
+	(let ((vector (gethash-or tag
+				  tag-to-posts
+				  :initform (make-array 5
+							:initial-element 0
+							:fill-pointer 0
+							:adjustable t))))
+	  (vector-push-extend metadata vector))))
+    ;; TODO: Sort tags
+    ;; TODO: Main index
+    ;; TODO: Archive
+    (do-hash (tag-to-posts tag posts)
+      ;; TODO: Move to helper
+      (let ((tag-string (string-downcase (symbol-name tag))))
+	(push (create-index-item :pathstring (uiop:unix-namestring
+					      (make-pathname :directory (list :relative
+									      "posts"
+									      tag-string)
+							     :name "index"
+							     :type "lhtml"))
+				 :title (format nil "Posts tagged with: ~a" tag-string)
+				 :posts posts)
+	      results)))
+    results))
 
 ;;; Processing pipeline graph
 (defun add-edge (node child)
@@ -583,15 +717,15 @@ Note: the result is a topologically sorted list of node instances."
     (pipeline-sort pipeline)))
 
 (defparameter *pipeline*
-  '((source :children (front-matter
-		       log-items))
+  '((source :children (front-matter))
     (front-matter :children (markdown
 			     index-posts))
     (markdown :children (template-posts))
-    (index-posts :children (log-items))
     (template-posts :children (lhtml))
-    (lhtml :children (log-items destination))
-    (log-items)
+    (index-posts :children (template-indexes))
+    (template-indexes :children (lhtml))
+    (lhtml :children (destination))
+;    (log-items)
     (destination)))
 
 (defvar *pipeline-instance* nil)
