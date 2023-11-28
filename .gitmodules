@@ -100,3 +100,6 @@
 [submodule "deps/esrap"]
 	path = deps/esrap
 	url = https://github.com/scymtym/esrap.git
+[submodule "deps/yason"]
+	path = deps/yason
+	url = https://github.com/phmarek/yason.git
