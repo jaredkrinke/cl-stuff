@@ -37,6 +37,14 @@
   `(maphash (lambda (,key ,value) ,@body)
 	    ,hash-table))
 
+(defun string->keyword (string)
+  "Converts STRING to a keyword with the same name (in default/uppercase)"
+  (intern (string-upcase string) :keyword))
+
+(defun keyword->string (keyword)
+  "Converts KEYWORD to a lowercase string"
+  (string-downcase (symbol-name keyword)))
+
 (defun alist-path (alist &rest path)
   "Returns the alist value associated with PATH (note: multiple values will be searched recursively)"
   (loop with result = alist
@@ -341,6 +349,7 @@ Supported types:
 	   (ensure-directories-exist output-path)
 	   (write-content (item-content item) output-path))
 	  (:delete
+	   (spew "Deleting ~a...~%" output-path)
 	   (delete-file output-path)))))))
 
 (defclass destination (write-to-directory)
@@ -374,7 +383,10 @@ Supported types:
   ((include :initform '(:type "md")))
   (:documentation "Extracts front matter from Markdown files and adds it (along with :PATH-TO-ROOT) to item metadata"))
 
-(defparameter *front-matter-pattern* (ppcre:create-scanner "^'''\\r?\\n(.*?\\r?\\n)'''\\r?\\n"
+;; TODO: Make YAML optional
+;; (defparameter *front-matter-pattern* (ppcre:create-scanner "^'''\\r?\\n(.*?\\r?\\n)'''\\r?\\n"
+;; 							   :single-line-mode t))
+(defparameter *front-matter-pattern* (ppcre:create-scanner "^---\\r?\\n(.*?\\r?\\n)---\\r?\\n"
 							   :single-line-mode t))
 
 (defun create-path-to-root (pathstring)
@@ -395,8 +407,15 @@ Supported types:
       (when start
 	(let ((front-matter (subseq content (elt starts 0) (elt ends 0)))
 	      (metadata (item-metadata item)))
-	  (loop for (key value) on (read-from-string front-matter) by 'cddr
-		do (push (cons key value) metadata))
+	  ;; Non-YAML version
+	  ;; (loop for (key value) on (read-from-string front-matter) by 'cddr
+	  ;; 	do (push (cons key value) metadata))
+	  (do-hash ((yaml:parse front-matter) key-raw value-raw)
+	    (let* ((key (string->keyword key-raw))
+		   (value (case key
+			    (:keywords (mapcar #'string->keyword value-raw))
+			    (t value-raw))))
+	      (push (cons key value) metadata)))
 	  (push (cons :path-to-root (create-path-to-root pathstring)) metadata)
 	  (push (cons :path-from-root (change-type pathstring "html")) metadata)
 	  (setf (item-metadata item) metadata)
@@ -481,6 +500,8 @@ Supported types:
 			     :name ,(anchorify (get-inner-text (cons :fragment processed-children)))
 			     ,@processed-children)))
 	       (:paragraph (cons :p (recurse children)))
+	       (:image `(:img :href ,(getf (cadadr tree) :source))) ; TODO: Title, etc.
+	       (:block-quote (cons :blockquote (recurse children)))
 	       (:counted-list (cons :ol (recurse children)))
 	       (:bullet-list (cons :ul (recurse children)))
 	       (:list-item (cons :li (recurse children)))
@@ -632,7 +653,7 @@ Supported types:
     ;; TODO: Archive
     (do-hash (tag-to-posts tag posts)
       ;; TODO: Move to helper
-      (let ((tag-string (string-downcase (symbol-name tag))))
+      (let ((tag-string (keyword->string tag)))
 	(push (create-index-item :pathstring (uiop:unix-namestring
 					      (make-pathname :directory (list :relative
 									      "posts"
