@@ -61,3 +61,40 @@
 (defun sum-calibration-values* ()
   (loop for line in (read-as-lines)
 	sum (decode-calibration-line line)))
+
+;;; Problem 1, part 1
+(defparameter *max-cubes*
+  '((red . 12)
+    (green . 13)
+    (blue . 14)))
+
+(defun get-game-id (line)
+  (parse-integer (ppcre:regex-replace "^Game ([0-9]+):.*$" line "\\1")))
+
+(defun get-max-for-color (line color)
+  (let ((max 0))
+    (ppcre:do-scans (start end reg-starts reg-ends
+		     (format nil "([0-9]+) ~a" (string-downcase (symbol-name color))) line)
+      (let ((value (parse-integer (subseq line (elt reg-starts 0) (elt reg-ends 0)))))
+	(when (> value max) (setf max value))))
+    max))
+
+(defun sum-possible-game-ids ()
+  (loop with sum = 0
+	for line in (read-as-lines)
+	do (macrolet ((check (color)
+			`(<= (get-max-for-color line ,color) (rest (assoc ,color *max-cubes*)))))
+	     (when (and (check 'red)
+			(check 'green)
+			(check 'blue))
+	       (incf sum (get-game-id line))))
+	finally (return sum)))
+
+;;; Problem 2, part 2
+(defun compute-power-for-game (line)
+  (apply #'* (loop for color in '(red green blue)
+		   collect (get-max-for-color line color))))
+
+(defun sum-game-powers ()
+  (loop for line in (read-as-lines)
+	sum (compute-power-for-game line)))
