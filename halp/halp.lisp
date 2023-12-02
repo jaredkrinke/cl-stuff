@@ -10,8 +10,7 @@
      ,@body))
 
 ;;; String helpers
-(defun string-starts-with (prefix string &key (start 0))
-  "Returns non-NIL if STRING starts with PREFIX"
+(defun substring-starts-with-p (prefix string &key (start 0))
   (and (>= (length string)
 	   (+ start (length prefix)))
        (loop for prefix-character across prefix
