@@ -7,7 +7,7 @@
   (uiop:split-string (read) :separator +eol+))
 
 ;;; Day 1, part 1
-(defparameter +zero-code+ (char-code #\0))
+(defconstant +zero-code+ (char-code #\0))
 
 (defun digit->number (character)
   (- (char-code character) +zero-code+))
@@ -22,7 +22,7 @@
 	sum value))
 
 ;;; Day 1, part 2 (note: overlapping strings are considered separate numbers)
-(defun string-starts-with (prefix string &key (start 0))
+(defun substring-starts-with-p (prefix string &key (start 0))
   (and (>= (length string)
 	   (+ start (length prefix)))
        (loop for prefix-character across prefix
@@ -34,7 +34,7 @@
 
 (defun find-digit (line start-index)
   (macrolet ((check-string (string value)
-	       `(when (string-starts-with ,string line :start start-index) ,value)))
+	       `(when (substring-starts-with-p ,string line :start start-index) ,value)))
     (let ((character (aref line start-index)))
       (if (digit-char-p character)
 	  (digit->number character)
