@@ -1,5 +1,9 @@
 (defpackage #:halp
-  (:use #:cl))
+  (:use #:cl)
+  (:export #:with-gensyms
+	   #:substring-starts-with-p
+	   #:string-join
+	   #:alist-path))
 
 (in-package #:halp)
 
