@@ -62,7 +62,7 @@
   (loop for line in (read-as-lines)
 	sum (decode-calibration-line line)))
 
-;;; Problem 1, part 1
+;;; Problem 2, part 1
 (defparameter *max-cubes*
   '((red . 12)
     (green . 13)
