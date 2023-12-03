@@ -3,8 +3,10 @@
 
 (in-package #:aoc23)
 
+(defparameter *eol* (string #\Newline))
+
 (defun read-as-lines ()
-  (uiop:split-string (read) :separator +eol+))
+  (uiop:split-string (read) :separator *eol*))
 
 ;;; Day 1, part 1
 (defconstant +zero-code+ (char-code #\0))
@@ -91,3 +93,99 @@
 (defun sum-game-powers ()
   (loop for line in (read-as-lines)
 	sum (compute-power-for-game line)))
+
+;;; Problem 3, part 1
+(defun get-symbol-locations (lines)
+  (let ((locations nil))
+    (loop for y upfrom 0
+	  for line in lines
+	  do
+	     (loop for x upfrom 0
+		   for char across line
+		   do
+		      (when (and (not (digit-char-p char))
+				 (not (eql #\. char)))
+			(push (list x y)
+			      locations))))
+    locations))
+
+(defun get-relevant-locations (lines)
+  (let ((relevant nil)
+	 (width (length (first lines)))
+	 (height (length lines))
+	(locations (get-symbol-locations lines)))
+    (loop for (x y) in locations do
+      (loop for dx from -1 upto 1 do
+	(loop for dy from -1 upto 1 do
+	  (pushnew (list (max 0 (min (1- width) (+ x dx)))
+			 (max 0 (min (1- height) (+ y dy))))
+		   relevant
+		   :test 'equal))))
+    relevant))
+
+(defstruct part-info
+  number)
+
+(defun get-number-locations (lines)
+  (let ((locations nil)
+	(location-to-value nil))
+    (loop for y upfrom 0 for line in lines do
+      (ppcre:do-matches (start end "[0-9]+" line)
+	(let* ((value (parse-integer line :start start :end end))
+	       (part-info (make-part-info :number value)))
+	  (loop for x from start upto (1- end) do
+	    (push (list x y) locations)
+	    (push (cons (list x y) part-info) location-to-value)))))
+    (values locations location-to-value)))
+
+(defun print-schematic (lines relevant-locations part-locations)
+  (loop for y upfrom 0 for line in lines do
+    (loop for x upfrom 0 for char across line do
+      (let* ((position (list x y))
+	     (relevant (member position relevant-locations :test 'equal))
+	     (has-part (member position part-locations :test 'equal))
+	     (c (cond ((and relevant has-part) "+")
+		      (relevant "-")
+		      (has-part "|")
+		      (t "_"))))
+	(format t "~a" c)))
+    (fresh-line)))
+
+(defun sum-part-numbers ()
+  (let* ((lines (read-as-lines))
+	 (relevant-locations (get-relevant-locations lines))
+	 (parts nil))
+    (multiple-value-bind (part-locations location-to-value) (get-number-locations lines)
+;      (print-schematic lines relevant-locations part-locations)
+      (loop for location in (intersection relevant-locations part-locations :test 'equal)
+	    for value = (rest (assoc location location-to-value :test 'equal))
+	    do (pushnew value parts :test 'eq)))
+    (loop for part-info in parts sum (part-info-number part-info))))
+
+;;; Problem 3, part 2
+(defun get-gear-positions (lines)
+  (let ((gears nil))
+    (loop for y upfrom 0 for line in lines do
+      (loop for x upfrom 0 for char across line do
+	(when (char= #\* char)
+	  (push
+	   (loop for dx from -1 upto 1
+		 nconc (loop for dy from -1 upto 1
+			     collect (list (+ x dx)
+					   (+ y dy))))
+	   gears))))
+    gears))
+
+(defun sum-gear-ratios ()
+  (let* ((sum 0)
+	 (lines (read-as-lines))
+	 (gears (get-gear-positions lines)))
+    (multiple-value-bind (part-locations location-to-info) (get-number-locations lines)
+      (loop for gear-positions in gears for parts = nil do
+	(loop for location in (intersection gear-positions part-locations :test 'equal)
+	      for info = (rest (assoc location location-to-info :test 'equal))
+	      do (pushnew info parts))
+	(when (equal 2 (length parts))
+	  (incf sum (* (part-info-number (first parts))
+		       (part-info-number (second parts)))))))
+    sum))
