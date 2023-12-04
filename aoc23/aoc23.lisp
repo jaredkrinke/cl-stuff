@@ -1,5 +1,5 @@
-(defpackage #:aoc23
-  (:use #:cl))
+(defpackage :aoc23
+  (:use :cl))
 
 (in-package #:aoc23)
 
@@ -189,3 +189,39 @@
 	  (incf sum (* (part-info-number (first parts))
 		       (part-info-number (second parts)))))))
     sum))
+
+;;; Problem 4, part 1
+(defun string-list-to-numbers (string)
+  (mapcar #'parse-integer
+	  (ppcre:all-matches-as-strings "[0-9]+" string)))
+
+(defun sum-winners ()
+    (loop for line in (read-as-lines)
+	  for separator-index = (position #\| line)
+	  for left = (string-list-to-numbers (subseq line (1+ (position #\: line)) separator-index))
+	  for right = (string-list-to-numbers (subseq line (+ separator-index 2)))
+	  for score = (let ((score 0))
+			(loop for n in left do
+			  (when (member n right)
+			    (setf score (if (zerop score) 1 (* score 2)))))
+			score)
+	  sum score))
+
+;;; Problem 4, part 2
+(defun count-winners (line)
+  (let* ((separator-index (position #\| line))
+	 (left (string-list-to-numbers (subseq line (1+ (position #\: line)) separator-index)))
+	 (right (string-list-to-numbers (subseq line (+ separator-index 2))))
+	 (score (length (intersection left right))))
+    score))
+
+(defun sum-copies ()
+  (let* ((lines (read-as-lines))
+	 (copies (make-array (length lines) :initial-element 1)))
+    (loop for line in lines
+	  for index upfrom 0
+	  for winners = (count-winners line)
+	  do (loop repeat winners
+		   for i upfrom (1+ index)
+		   do (incf (aref copies i) (aref copies index))))
+    (loop for count across copies sum count)))
