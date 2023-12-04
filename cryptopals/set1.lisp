@@ -149,4 +149,24 @@
 		     (> score best-score))
 	     (setf best-score score)
 	     (setf result decrypted-message))
-	finally (return (bytes->string result))))
+	finally (return (values (bytes->string result)
+				best-score))))
+
+;;; Challenge 4
+(defun maximize (get-value list)
+  "Returns the item from LIST with the highest value when passed to the function GET-VALUE"
+  (loop with max-value = nil
+	with best = nil
+	for item in list
+	for value = (funcall get-value item)
+	do (when (or (not max-value)
+		     (> value max-value))
+	     (setf max-value value)
+	     (setf best item))
+	finally (return (values best max-value))))
+
+(defun detect-single-byte-xor (path)
+  "Finds a single byte-XOR'd line in the contents of the file at PATH"
+  (maximize #'second
+	    (loop for line in (uiop:read-file-lines path)
+		  collect (multiple-value-list (decrypt-single-byte-xor (hex->bytes line))))))
