@@ -112,3 +112,12 @@
 [submodule "deps/cl-libyaml"]
 	path = deps/cl-libyaml
 	url = https://github.com/eudoxia0/cl-libyaml.git
+[submodule "deps/closer-mop"]
+	path = deps/closer-mop
+	url = https://github.com/pcostanza/closer-mop.git
+[submodule "deps/cl-cont"]
+	path = deps/cl-cont
+	url = https://gitlab.common-lisp.net/cl-cont/cl-cont.git
+[submodule "deps/cl-coroutine"]
+	path = deps/cl-coroutine
+	url = https://github.com/takagi/cl-coroutine.git
