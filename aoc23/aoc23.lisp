@@ -225,3 +225,173 @@
 		   for i upfrom (1+ index)
 		   do (incf (aref copies i) (aref copies index))))
     (loop for count across copies sum count)))
+
+;;; Day 8, part 1
+(defun parse-moves (string)
+  (coerce (loop for char across string
+		collect (if (equal char #\L) 'first 'second))
+	  'vector))
+
+(defun parse-rule (string)
+  (ppcre:register-groups-bind (source left right) ("([A-Z0-9]{3}) = [(]([A-Z0-9]{3}), ([A-Z0-9]{3})"
+						   string)
+    (list source left right)))
+
+(defun count-steps ()
+  (let* ((lines (read-as-lines))
+	 (moves (parse-moves (first lines)))
+	 (rules (mapcar #'parse-rule (cddr lines))))
+    (loop with position = "AAA"
+	  with count = 0
+	  for direction = (aref moves (mod count (length moves)))
+	  do (setf position (funcall direction (rest (assoc position rules :test 'equal))))
+	     (incf count)
+	     (when (equal position "ZZZ") (loop-finish))
+	  finally (return count))))
+
+;;; Day 8, part 2
+(defun is-start-p (name)
+  (eql (aref name 2) #\A))
+
+(defun is-goal-p (name)
+  (eql (aref name 2) #\Z))
+
+(defun ghosts-done-p (ghosts)
+  (every #'is-goal-p ghosts))
+
+(defun pairs->hash-table (pairs &key (test 'eql))
+  (let ((hash-table (make-hash-table :test test)))
+    (loop for (key . value) in pairs
+	  do (setf (gethash key hash-table) value))
+    hash-table))
+
+;; Not used; this was for checking to ensure the sequence of movements didn't repeat internally
+;; (defun min-repeating-subsequence (sequence)
+;;   (let ((length (length sequence)))
+;;     (loop for sublength upfrom 1 do
+;;       (when (zerop (mod length sublength))
+;; 	(when (loop with same = t
+;; 		    for item across sequence
+;; 		    for index upfrom 0
+;; 		    for subitem = (aref sequence (mod index sublength))
+;; 		    while same
+;; 		    do (unless (equal item subitem)
+;; 			 (setf same nil))
+;; 		    finally (return same))
+;; 	  (return-from min-repeating-subsequence
+;; 	    (subseq sequence 0 sublength)))))
+;;     sequence))
+
+(defun ghost-step (ghost moves rules count)
+  (funcall (aref moves (mod count (length moves)))
+	   (gethash ghost rules)))
+
+(defun find-cycle (ghost moves rules)
+  "Find a cycle in the ghost's movements and return (START END GOAL)"
+  (let ((seen (make-hash-table :test 'equal)))
+    (loop with goal-positions = nil
+	  for position upfrom 0
+	  for index = (mod position (length moves))
+	  for state = (list ghost index)
+	  for previous-position = (gethash state seen)
+	  until previous-position
+	  do (when (is-goal-p ghost)
+	       (push position goal-positions))
+	     (setf (gethash state seen) position)
+	     (setf ghost (ghost-step ghost moves rules position))
+	  finally (return (list previous-position
+				position
+				goal-positions)))))
+
+(cl-coroutine:defcoroutine find-next-goal (arguments)
+  (destructuring-bind (ghost moves rules) arguments
+    ;; Note: This assumes all paths have cycles--this isn't true in general, but is true for this input
+    (destructuring-bind (loop-start loop-end goal-positions) (find-cycle ghost moves rules)
+      (unless (equal 1 (length goal-positions))
+	(warn "Multiple goal positions"))
+      (let ((goal-position (first goal-positions))
+	    (period (- loop-end loop-start)))
+	(loop for position upfrom goal-position by period do
+	  (cl-coroutine:yield position))))))
+
+(defstruct ghost-info
+  state
+  coroutine
+  next)
+
+(defun count-ghost-steps ()
+  "Solve the problem programmatically--takes a while to run!"
+  (let* ((lines (read-as-lines))
+	 (moves (parse-moves (first lines)))
+	 (rule-infos (mapcar #'parse-rule (cddr lines)))
+	 (rules (pairs->hash-table rule-infos
+				   :test 'equal))
+	 (ghosts (remove-if-not #'is-start-p
+     				(mapcar #'first rule-infos)))
+	 (ghost-infos (mapcar (lambda (state)
+				(let ((coroutine (cl-coroutine:make-coroutine 'find-next-goal)))
+				  (make-ghost-info :state state
+						   :coroutine coroutine
+						   :next (funcall coroutine (list state moves rules)))))
+			      ghosts)))
+    ;; Advance ghosts until *all* are in a goal state at the same time
+    (loop for all-equal = (apply #'= (mapcar #'ghost-info-next
+					     ghost-infos))
+	  for earliest-ghost-info = (halp:find-min #'ghost-info-next ghost-infos)
+	  until all-equal
+	  do ;; Advance the ghost with the earliest goal state
+	     (setf (ghost-info-next earliest-ghost-info)
+		   (funcall (ghost-info-coroutine earliest-ghost-info) nil))
+	  finally (return (ghost-info-next (first ghost-infos))))))
+
+(defun gcd* (x y)
+  "Extended Euclidean Algorithm for finding the greatest common denominator of X and Y, along with coefficients A and B such that (= (+ (* A X) (* B Y)) (GCD X Y)). Returns (VALUES GCD A B)."
+  ;; TODO: Rename s -> a and tee -> b
+  (loop with old-r = x
+	with r = y
+	with old-s = 1
+	with s = 0
+	with old-t = 0
+	with tee = 1
+	until (= r 0)
+	do (multiple-value-bind (quotient remainder) (floor old-r r)
+	     (psetf r remainder
+		    s (- old-s (* quotient s))
+		    tee (- old-t (* quotient tee))
+		    old-r r
+		    old-s s
+		    old-t tee))
+	finally (return (values old-r old-s old-t))))
+
+(defun combine-periods (a-period a-offset b-period b-offset)
+  "Combine two periods (with offsets) and find when they align"
+  ;; Note: For this challenge's input, the offsets (i.e. the hard parts) aren't needed
+  (multiple-value-bind (gcd a b) (gcd* a-period b-period)
+    (declare (ignore b))
+    (let ((offset (- a-offset b-offset)))
+      (multiple-value-bind (quotient remainder) (floor offset gcd)
+	(unless (zerop remainder) (error "Offsets never overlap"))
+	(let* ((combined-period (* (/ a-period gcd) b-period))
+	       (combined-offset (mod (- a-offset (* a quotient a-period)) combined-period)))
+	  (values combined-period combined-offset))))))
+
+(defun count-ghost-steps-fast ()
+  "Solve the problem using shortcuts enabled by the specific input values"
+  (let* ((lines (read-as-lines))
+	 (moves (parse-moves (first lines)))
+	 (rule-infos (mapcar #'parse-rule (cddr lines)))
+	 (rules (pairs->hash-table rule-infos
+				   :test 'equal))
+	 (starts (remove-if-not #'is-start-p
+				(mapcar #'first rule-infos)))
+	 (infos (loop for start in starts
+		      collect (multiple-value-list (find-cycle-length start moves rules))))
+	 (cycles (loop for (start end (goal-position)) in infos
+		       collect (list (- end start) ; Period
+				     goal-position))))
+    ;; Observation: All lead-ins to cycles start at what *would* be the goal when found later
+    ;; on (and goals are only hit once), so all that is needed in the least common multiple...
+    (flet ((combine (a b)
+	     (multiple-value-list
+	      (combine-periods (first a) (second a) (first b) (second b)))))
+      (first (reduce #'combine cycles)))))
