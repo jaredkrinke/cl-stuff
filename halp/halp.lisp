@@ -1,9 +1,12 @@
-(defpackage #:halp
-  (:use #:cl)
+(defpackage :halp
+  (:use :cl)
   (:export #:with-gensyms
 	   #:substring-starts-with-p
 	   #:string-join
-	   #:alist-path))
+	   #:alist-path
+	   #:find-max
+	   #:find-min
+	   #:pairs->hash-table))
 
 (in-package #:halp)
 
@@ -42,3 +45,34 @@
 	for key in path
 	do (setf result (rest (assoc key result)))
 	finally (return result)))
+
+(defun find-max (get-value list)
+  "Returns the item from LIST with the highest value when passed to the function GET-VALUE"
+  (loop with max-value = nil
+	with best = nil
+	for item in list
+	for value = (funcall get-value item)
+	do (when (or (not max-value)
+		     (> value max-value))
+	     (setf max-value value)
+	     (setf best item))
+	finally (return (values best max-value))))
+
+(defun find-min (get-value list)
+  "Returns the item from LIST with the smallest value when passed to the function GET-VALUE"
+  (loop with min-value = nil
+	with best = nil
+	for item in list
+	for value = (funcall get-value item)
+	do (when (or (not min-value)
+		     (< value min-value))
+	     (setf min-value value)
+	     (setf best item))
+	finally (return (values best min-value))))
+
+(defun pairs->hash-table (pairs &key (test 'eql))
+  "Creates a hash table and populate it with PAIRS (a list of (KEY . VALUE))"
+  (let ((hash-table (make-hash-table :test test)))
+    (loop for (key . value) in pairs
+	  do (setf (gethash key hash-table) value))
+    hash-table))
