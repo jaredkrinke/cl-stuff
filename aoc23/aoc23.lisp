@@ -299,7 +299,6 @@
   (loop for location in '("humidity" "temperature" "light" "water" "fertilizer" "soil" "seed" :done)
 	for info = (gethash location maps)
 	for ranges = (rest info)
-	;; TODO: Need to ensure best range overlaps! Or decide what to do if no overlap!
 	for best-range = (halp:find-min #'first
 					(remove-if-not (lambda (range)
 							 (or (null min)
