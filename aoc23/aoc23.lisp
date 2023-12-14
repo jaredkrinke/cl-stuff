@@ -226,6 +226,131 @@
 		   do (incf (aref copies i) (aref copies index))))
     (loop for count across copies sum count)))
 
+;;; Day 5, part 1
+(defun label-line-p (line)
+  (find #\: line))
+
+(defun parse-maps (lines)
+  (let ((maps (make-hash-table :test 'equal))
+	(from nil)
+	(map nil))
+    (flet ((push-map-if-needed ()
+	     (when from
+	       (setf (gethash from maps) (nreverse map)))))
+      (loop for line in lines
+	    do (if (label-line-p line)
+		   (ppcre:register-groups-bind (from-new to) ("^([^-]+)-to-([^ ]+) map:" line)
+		     (push-map-if-needed)
+		     (setf map (list to))
+		     (setf from from-new))
+		   (push (string-list-to-numbers line) map))
+	    finally (push-map-if-needed)))
+    maps))
+
+(defun map-value (value map)
+  (let ((mapping (find-if (lambda (mapping)
+			    (and (>= value (second mapping))
+				 (< value (+ (second mapping) (third mapping)))))
+			  map)))
+    (if mapping
+	(+ (- value (second mapping)) (first mapping))
+	value)))
+
+(defun emptyp (vector)
+  (eql 0 (length vector)))
+
+(defun find-lowest-location ()
+  (let* ((lines-raw (read-as-lines))
+	 (lines (remove-if #'emptyp lines-raw))
+	 (seeds (string-list-to-numbers (first lines)))
+	 (maps (parse-maps (rest lines))))
+    (loop with location = "seed"
+	  with values = seeds
+	  for map = (gethash location maps)
+	  until (equal location "location")
+	  do (setf values (loop for value in values
+				collect (map-value value (rest map))))
+	     (setf location (first map))
+	  finally (return (apply #'min values)))))
+
+;;; Day 5, part 2
+(defun map-from-seed (seed maps)
+  (loop with location = "seed"
+	with value = seed
+	for map = (gethash location maps)
+	until (equal location "location")
+	do (setf value (map-value value (rest map)))
+	   (setf location (first map))
+	finally (return value)))
+
+;; Approach: Brute force didn't work, so map backwards from lowest ranges and see if any input seed ranges overlap
+
+(defun overlapp (a-start a-length b-start b-length)
+  "If ranges overlap, returns (VALUES MIN MAX) where MIN is the start of the overlap and MAX is 1 past the end of the overlap"
+  (let* ((a-end (+ a-start a-length))
+	 (b-end (+ b-start b-length))
+	 (min (max a-start b-start))
+	 (max (min a-end b-end)))
+    (when (< min max)
+      (values min max))))
+
+(defun find-lowest-seeds (maps &optional min max)
+  "Find lowest seeds that are on the range [MIN, MAX)"
+  (loop for location in '("humidity" "temperature" "light" "water" "fertilizer" "soil" "seed" :done)
+	for info = (gethash location maps)
+	for ranges = (rest info)
+	;; TODO: Need to ensure best range overlaps! Or decide what to do if no overlap!
+	for best-range = (halp:find-min #'first
+					(remove-if-not (lambda (range)
+							 (or (null min)
+							     (destructuring-bind (to-start from-start length) range
+							       (declare (ignore from-start))
+							       (overlapp to-start length min (- max min)))))
+						       ranges))
+	until (eql location :done)
+	do (unless best-range (return nil))
+	   (if (or min max)
+	       (progn
+		 ;; Min/max from best range
+		 (destructuring-bind (to-start from-start length) best-range
+		   (multiple-value-bind (overlap-min overlap-max) (overlapp to-start length min (- max min))
+		     (setf min (+ from-start (- overlap-min to-start)))
+		     (setf max (+ min (- overlap-max overlap-min))))))
+	       (progn
+		 ;; Initial min/max
+		 (setf min (second best-range))
+		 (setf max (+ min (third best-range)))))
+	finally (return (list min max))))
+
+(defun try-find-lowest-location (maps seed-ranges &optional min max)
+  "Try to find the lowest seed that ends up in range [MIN, MAX)"
+  (let ((lowest-range (find-lowest-seeds maps min max)))
+    (when lowest-range
+      (let* ((lowest-min (first lowest-range))
+	     (lowest-length (- (second lowest-range) lowest-min)))
+	(loop for (start length) on seed-ranges by 'cddr
+	      if (overlapp start length lowest-min lowest-length)
+		collect (multiple-value-bind (min max) (overlapp start length lowest-min lowest-length)
+			  (list min (- max min))))))))
+
+(defun find-lowest-seed-ranges (seed-ranges maps)
+  (let* ((sorted-last-maps (sort (copy-list (rest (gethash "humidity" maps)))
+				 (lambda (a b)
+				   ;; Sort by start of destination range, ascending
+				   (< (first a) (first b))))))
+    (loop for (to-start from-start length) in sorted-last-maps
+	  for result = (try-find-lowest-location maps seed-ranges to-start (+ to-start length))
+	  until result
+	  finally (return result))))
+
+(defun find-lowest-locations-from-ranges ()
+  (let* ((lines-raw (read-as-lines))
+	 (lines (remove-if #'emptyp lines-raw))
+	 (seed-ranges (string-list-to-numbers (first lines)))
+	 (maps (parse-maps (rest lines))))
+    (loop for (start) in (find-lowest-seed-ranges seed-ranges maps)
+	  minimize (map-from-seed start maps))))
+
 ;;; Day 8, part 1
 (defun parse-moves (string)
   (coerce (loop for char across string
