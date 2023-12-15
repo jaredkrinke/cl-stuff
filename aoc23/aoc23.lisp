@@ -519,3 +519,20 @@
 	     (multiple-value-list
 	      (combine-periods (first a) (second a) (first b) (second b)))))
       (first (reduce #'combine cycles)))))
+
+;;; Day 15, part 1
+(defun hash (chars)
+  (let ((value 0))
+    (loop for char across chars do
+      (incf value (char-code char))
+      (setf value (* value 17))
+      (setf value (mod value 256))
+	  finally (return value))))
+
+(defun hash-init ()
+  (let ((lines (read-as-lines))
+	(stream (make-string-output-stream)))
+    (loop for line in lines do (write-string line stream))
+    (loop for string in (ppcre:all-matches-as-strings "[^,]+"
+						      (get-output-stream-string stream))
+	  sum (hash string))))
