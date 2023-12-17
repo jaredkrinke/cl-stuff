@@ -121,3 +121,6 @@
 [submodule "deps/cl-coroutine"]
 	path = deps/cl-coroutine
 	url = https://github.com/takagi/cl-coroutine.git
+[submodule "deps/cl-competitive"]
+	path = deps/cl-competitive
+	url = https://github.com/privet-kitty/cl-competitive.git
