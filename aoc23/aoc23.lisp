@@ -536,3 +536,274 @@
     (loop for string in (ppcre:all-matches-as-strings "[^,]+"
 						      (get-output-stream-string stream))
 	  sum (hash string))))
+
+;;; Day 17, part 1
+(defstruct state
+  position
+  path
+  recent
+  heat
+  goal
+  parent)
+
+(defun at-most (count list)
+  (loop repeat count
+	for item in list
+	collect item))
+
+(defun ordered-insert (obj list less-than-p &key (key #'identity))
+  (if (null list)
+      (list obj)
+      (loop with obj-key = (funcall key obj)
+	    for pair on list
+	    for first = (car pair)
+	    for rest = (cdr pair)
+	    for first-key = (funcall key first)
+	    do (if (funcall less-than-p obj-key first-key)
+		   (progn
+		     (setf (car pair) obj)
+		     (setf (cdr pair) (cons first rest))
+		     (loop-finish))
+		   (when (null rest)
+		     (setf (cdr pair) (list obj))
+		     (loop-finish)))
+	    finally (return list))))
+
+(defun a*-search (get-next get-heuristic start)
+  (let ((seen (make-hash-table :test 'equal)))
+    (flet ((better (state)
+	     (let* ((key (list (state-position state)
+			       (state-recent state)))
+		    (previous (gethash key seen)))
+	       (when (or (not previous)
+			 (< (funcall get-heuristic state) previous))
+		 (setf (gethash key seen) (funcall get-heuristic state))
+		 t))))
+      (loop with available = (list start)
+	    for state = (pop available)
+	    until (state-goal state)
+	    do (when (better state)
+		 (loop for new-state in (funcall get-next state) do
+		   (setf available (ordered-insert new-state available #'< :key get-heuristic))))
+	    finally (break)(return state)))))
+
+;; (defun a*-search (get-next get-heuristic start)
+;;   (loop with available = (list start)
+;; 	for state = (pop available)
+;; 	until (state-goal state)
+;; 	do (loop for new-state in (funcall get-next state) do
+;; 	  (setf available (ordered-insert new-state available #'< :key get-heuristic)))
+;; 	finally (return state)))
+
+(defparameter *directions*
+  '((1 0)
+    (0 1)
+    (-1 0)
+    (0 -1)))
+
+(defun position-add (a b)
+  (loop for i in a
+	for j in b
+	collect (+ i j)))
+
+(defun position-negate (a)
+  (loop for i in a collect (- 0 i)))
+
+(defun nonnegativep (x)
+  (>= x 0))
+
+(defun in-bounds-p (position dimensions)
+  (and (every #'nonnegativep position)
+       (every #'< position dimensions)))
+
+(defun not-backtracking-p (position path)
+  ;; TODO: Only check that it's not going directly backwards?
+  (not (member position path :test 'equal)))
+
+(defun not-too-straight-p (new-direction recent)
+  (loop for index upfrom 0
+	for direction in recent
+	while (equal direction new-direction)
+	finally (return (< index 3))))
+
+(defun get-next-states (grid dimensions goal-position state)
+  (labels ((valid-position (direction state)
+	     (let ((new-position (position-add (state-position state) direction)))
+	       (and
+		(in-bounds-p new-position dimensions)
+		(not-backtracking-p new-position (state-path state))
+		(not-too-straight-p direction (state-recent state)))))
+	   (move (state direction)
+	     (let* ((old-position (state-position state))
+		    (new-position (position-add old-position direction)))
+	       (when (valid-position direction state)
+		 (make-state :position new-position
+			     :path (cons new-position (state-path state))
+			     :recent (cons direction (at-most 2 (state-recent state)))
+			     :heat (+ (state-heat state) (apply #'aref (cons grid new-position)))
+			     :goal (equal goal-position new-position))))))
+    (loop for direction in *directions*
+	  for new-state = (move state direction)
+	  if new-state collect new-state)))
+
+(defparameter *start-state*
+  (make-state :position (list 0 0)
+			     :path (list (list 0 0))
+			     :recent nil
+			     :heat 0
+			     :goal nil))
+
+(defun find-best-path ()
+  (let* ((lines (read-as-lines))
+	 (width (length (first lines)))
+	 (height (length lines))
+	 (dimensions (list height width))
+	 (goal-position (list (1- height) (1- width)))
+	 (grid (make-array dimensions)))
+    (loop for y upfrom 0 for line in lines do
+      (loop for x upfrom 0 for char across line do
+	(setf (aref grid y x) (parse-integer (string char)))))
+    (a*-search (lambda (state)
+		 (get-next-states grid dimensions goal-position state))
+	       #'state-heat
+	       ;; (lambda (state)
+	       ;; 	 (+ (state-heat state)
+	       ;; 	    (reduce #'+ (mapcar #'abs (position-add goal-position
+	       ;; 					(position-negate (state-position state)))))))
+	       *start-state*)))
+
+;;; Day 17, part 2
+;; TODO: Needs to move 4 spaces at once when changing direction
+(defun not-too-straight-p* (new-direction recent)
+  (loop for index upfrom 0
+	for direction in recent
+	while (equal direction new-direction)
+	finally (return (< index 10))))
+
+(defun straight-enough-p (new-direction recent)
+  (if recent
+      (let ((most-recent (first recent))
+	    (four-most-recent (at-most 4 recent)))
+	(if (every (lambda (d) (equal d most-recent)) four-most-recent)
+	    t
+	    (equal new-direction most-recent)))
+      t))
+
+(defun get-next-states* (grid dimensions goal-position state)
+  (labels ((valid-position (direction state)
+	     (let ((new-position (position-add (state-position state) direction)))
+	       (and
+		(in-bounds-p new-position dimensions)
+		(not-backtracking-p new-position (state-path state))
+		(not-too-straight-p* direction (state-recent state))
+		(straight-enough-p direction (state-recent state)))))
+	   (move (state direction)
+	     (let* ((old-position (state-position state))
+		    (new-position (position-add old-position direction)))
+	       (when (valid-position direction state)
+		 (make-state :position new-position
+			     :path (cons new-position (state-path state))
+			     :recent (cons direction (at-most 9 (state-recent state)))
+			     :heat (+ (state-heat state) (apply #'aref (cons grid new-position)))
+			     :goal (equal goal-position new-position)
+			     :parent state)))))
+    (loop for direction in *directions*
+	  for new-state = (move state direction)
+	  if new-state collect new-state)))
+
+(defun find-best-path* ()
+  (let* ((lines (read-as-lines))
+	 (width (length (first lines)))
+	 (height (length lines))
+	 (dimensions (list height width))
+	 (goal-position (list (1- height) (1- width)))
+	 (grid (make-array dimensions)))
+    (loop for y upfrom 0 for line in lines do
+      (loop for x upfrom 0 for char across line do
+	(setf (aref grid y x) (parse-integer (string char)))))
+    (a*-search (lambda (state)
+		 (get-next-states* grid dimensions goal-position state))
+	       'state-heat
+	       *start-state*)))
+
+;;; Day 18, part 1
+(defparameter *instructions*
+  '((#\R . (0 1))
+    (#\L . (0 -1))
+    (#\D . (1 0))
+    (#\U . (-1 0))))
+
+(defun position-multiply (position multiplier)
+  (loop for x in position collect (* x multiplier)))
+
+(defun parse-instructions (lines)
+  (loop for line in lines
+	collect (ppcre:register-groups-bind (direction amount) ("^([UDLR]) ([0-9]+)" line)
+		  (list (aref direction 0)
+			(parse-integer amount)))))
+
+(defun get-dimensions (instructions)
+  "Returns the required dimensions and initial position (with some buffer for flood-filling the exterior"
+  (loop with position = (list 0 0)
+	with min-x = 0
+	with min-y = 0
+	with max-x = 0
+	with max-y = 0
+	for (instruction amount) in instructions
+	for direction = (rest (assoc instruction *instructions*))
+	do (setf position (position-add position (position-multiply direction amount)))
+	   (setf min-y (min min-y (first position)))
+	   (setf min-x (min min-x (second position)))
+	   (setf max-y (max max-y (first position)))
+	   (setf max-x (max max-x (second position)))
+	finally (setf min-y (1- min-y))
+		(setf min-x (1- min-x))
+		(setf max-y (1+ max-y))
+		(setf max-x (1+ max-x))
+		(return (values (1+ (- max-y min-y))
+				(1+ (- max-x min-x))
+				(list (- 0 min-y)
+				      (- 0 min-x))))))
+
+(defun print-grid (grid)
+  (destructuring-bind (height width) (array-dimensions grid)
+    (loop for y from 0 below height do
+      (loop for x from 0 below width do
+	(format t "~a" (aref grid y x)))
+      (format t "~%"))))
+
+(defun boundary-fill (grid start value border-value)
+  "Flood fills starting at START with VALUE, stopping at BORDER-VALUE"
+  (loop with dimensions = (array-dimensions grid)
+	with positions = (list start)
+	while positions
+	do (let ((position (pop positions)))
+	     (when (in-bounds-p position dimensions)
+	       (let ((existing (apply #'aref (cons grid position))))
+		 (unless (or (equal existing value)
+			     (equal existing border-value))
+		   (setf (apply #'aref (cons grid position)) value)
+		   (loop for (nil . direction) in *instructions* do
+		     (push (position-add position direction) positions))))))))
+
+(defun compute-trench-area ()
+  (let* ((lines (read-as-lines))
+	 (instructions (parse-instructions lines)))
+    ;; Get dimensions
+    (multiple-value-bind (height width position) (get-dimensions instructions)
+      (let* ((dimensions (list height width))
+	     (grid (make-array dimensions :initial-element 1)))
+	(setf (apply #'aref (cons grid position)) 2)
+	;; Dig
+	(loop for (instruction amount) in instructions
+	      for direction = (rest (assoc instruction *directions*))
+	      do (loop repeat amount do
+		(setf position (position-add position direction))
+		(setf (apply #'aref (cons grid position)) 2)))
+	;; Fill
+	(boundary-fill grid (list 0 0) 0 2)
+	;; Sum
+	(print-grid grid)
+	(loop for y from 0 below height
+	      sum (loop for x from 0 below width
+			sum (min 1 (aref grid y x))))))))
