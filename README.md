@@ -14,5 +14,6 @@ Why Common Lisp? Originally, I wanted to [try out REPL-driven development](https
 | **dirmon**        | Prototype for enumerating file system changes under a given directory tree |
 | [**foolander**](https://github.com/jaredkrinke/cl-stuff/tree/main/foolander) | In-browser snake game that runs entirely server-side and uses absolutely no JavaScript -- created for [Autumn Lisp Game Jam 2023](https://itch.io/jam/autumn-lisp-game-jam-2023) |
 | **halp**          | My personal utility library -- every Common Lisp developer is required to have one of these |
+| **project-euler** | My solutions to a few [Project Euler](https://projecteuler.net/) problems |
 | **ssg**           | Experimental static site generator that supports incremental rebuilds |
 | **symbolic**      | My attempts at solving the exercises from [Common Lisp: A Gentle Introduction to Symbolic Computation](https://www.cs.cmu.edu/~dst/LispBook/) |
