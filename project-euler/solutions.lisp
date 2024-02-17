@@ -47,3 +47,60 @@
 		 for remaining = (- target coin)
 		 ;; Only allow this coin or smaller coins, to avoid duplicates (just in different order)
 		 sum (coin-sums remaining remaining-coins)))))
+
+;;; Problem 32
+(defparameter *one-through-nine* (loop for x from 1 upto 9 collect x))
+
+(defun remove-index (index sequence)
+  "Returns a new list that is a copy of SEQUENCE with the item at INDEX removed"
+  (loop for i upfrom 0
+	for item in sequence
+	unless (= i index) collect item))
+
+(defun split-by-indices (sequence indices &optional (offset 0))
+  "Returns subsequences of SEQUENCE when split at INDICES, optionally adjusted by OFFSET (note: INDICIES must be ascending)"
+  (cond ((null indices) (list sequence))
+	(t (let ((index (- (first indices) offset)))
+	     (cons (subseq sequence 0 index)
+		   (split-by-indices (subseq sequence index)
+				     (rest indices)
+				     (+ offset index)))))))
+
+(defun for-each-permutation-recursive (f a &optional tail)
+  "Calls F on each permutation of sequence A, optionally consed onto TAIL"
+  (cond ((null a) (funcall f tail))
+	(t (loop with length = (length a)
+		 for i from 0 below length
+		 for remaining = (remove-index i a)
+		 do (for-each-permutation-recursive f remaining (cons (elt a i) tail))))))
+
+(defun digits-to-value (digits)
+  "Returns the value represented by DIGITS, a list of digits in base 10"
+  (loop with sum = 0
+	with multiplier = (expt 10 (1- (length digits)))
+	for digit in digits
+	do (incf sum (* digit multiplier))
+	   (setf multiplier (/ multiplier 10))
+	finally (return sum)))
+
+(defun pandigital-product-sum ()
+  "Return the sum of all products whose multiplicand, multiplier, and product are 1 through 9 pandigital"
+  (let ((products nil)
+	(sum 0))
+    (for-each-permutation-recursive
+     (lambda (permutation)
+       ;; Try all possible splits of this permutation (i.e. where the multiplication and equals signs should go in the equation "multiplicand x multiplier = product")
+       (loop for multiply-index from 1 below (- (length *one-through-nine*) 2)
+	     do (loop for equals-index from (1+ multiply-index) below (1- (length *one-through-nine*)) do
+	       (destructuring-bind
+		   (multiplicand multiplier product)
+		   (mapcar #'digits-to-value
+			   (split-by-indices permutation (list multiply-index equals-index)))
+		 ;; Check equation is valid *and* product has not already been counted
+		 (when (and (= (* multiplicand multiplier) product)
+			    (not (member product products)))
+		   (push product products)
+		   (incf sum product))))
+	     finally (return sum)))
+     *one-through-nine*)
+    sum))
