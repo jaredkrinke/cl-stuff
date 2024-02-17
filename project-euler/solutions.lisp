@@ -74,7 +74,7 @@
 		 for remaining = (remove-index i a)
 		 do (for-each-permutation-recursive f remaining (cons (elt a i) tail))))))
 
-(defun digits-to-value (digits)
+(defun digits->value (digits)
   "Returns the value represented by DIGITS, a list of digits in base 10"
   (loop with sum = 0
 	with multiplier = (expt 10 (1- (length digits)))
@@ -104,3 +104,91 @@
 	     finally (return sum)))
      *one-through-nine*)
     sum))
+
+;;; Problem 33
+(defun multiple-of-ten-p (x)
+  "Returns non-NIL if X is a multiple of 10"
+  (= 0 (mod x 10)))
+
+(defun non-trivial-digit-cancelling-fraction (x y)
+  "Returns non-NIL if the digit-cancelling fraction (/ x y) is non-trivial (i.e. numerator and denominator are multiples of 10"
+  (not (and (multiple-of-ten-p x)
+	    (multiple-of-ten-p y))))
+
+(defun digit-cancelling-fraction-product-denominator ()
+  (loop with product = 1
+	for x from 10 upto 99
+	for x-digits = (digits x)
+	do (loop for y from (1+ x) upto 99
+		 for y-digits = (digits y)
+		 for intersection = (intersection x-digits y-digits)
+		 do (when (= (length intersection) 1)
+		      (let* ((digit (first intersection))
+			     (x-cancelled (digits-to-value (remove digit x-digits)))
+			     (y-cancelled (digits-to-value (remove digit y-digits))))
+			(when (and (not (zerop x-cancelled))
+				   (not (zerop y-cancelled))
+				   (= (/ x-cancelled y-cancelled)
+				      (/ x y))
+				   (non-trivial-digit-cancelling-fraction x y))
+			  (setf product (* product (/ x y)))))))
+	finally (return (denominator product))))
+
+;;; Problem 34
+(defmacro ret ((variable value) &body body)
+  "Creates a local variable named VARIABLE (initialized to VALUE), executes BODY, and returns the value of the variable"
+  `(let ((,variable ,value))
+     ,@body
+     ,variable))
+
+(defmacro multf (place multiplier)
+  "Multiplies PLACE by MULTIPLIER"
+  `(setf ,place (* ,place ,multiplier)))
+
+(defun factorial (n)
+  (ret (product 1)
+    (loop for x from n above 1 do
+      (multf product x))))
+
+(defun digit-factorials ()
+  (loop with sum = 0
+	for x upfrom 3
+	for digits = (digits x)
+	do (when (= x
+		    (reduce #'+ (mapcar #'factorial digits)))
+	     (incf sum x)
+	     (format t "~a (~a)~%" sum x))))
+
+;;; Problem 35
+(defun for-each-rotation (function list)
+  "Runs FUNCTION on each rotation of LIST"
+  (loop with length = (length list)
+	with first-cell = list
+	for start-cell on list
+	for rotation = (loop for cell = start-cell then (or (rest cell) first-cell)
+			     repeat length
+			     collect (first cell))
+	do (funcall function rotation)))
+
+(defun primep (n)
+  "Returns non-NIL if natural number N is prime (i.e. > 1 and not a product of two smaller natural numbers)"
+  (when (> n 1)
+    (loop for x from 2 upto (floor (sqrt n)) do
+      (when (= 0 (mod n x)) (return-from primep nil)))
+    t))
+
+(defun circular-prime-p (n)
+  "Returns non-NIL if N is a circular prime (i.e. all rotations of digits are themselves prime)"
+  (let ((digits (digits n)))
+    (for-each-rotation (lambda (digits)
+			 (let ((value (digits->value digits)))
+			   (unless (primep value)
+			     (return-from circular-prime-p nil))))
+		       digits))
+  t)
+
+(defun circular-primes ()
+  (ret (count 0)
+    (loop for n from 2 below 1000000 do
+      (when (circular-prime-p n)
+	(incf count)))))
