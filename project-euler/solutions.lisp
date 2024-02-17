@@ -32,3 +32,18 @@
 	do (when (= x (sum-digit-powers x power))
 	     (incf sum x)
 	     (format t "~a: ~a~%" x sum))))
+
+;;; Problem 31
+(defparameter *coin-values*
+  (nreverse (list 1 2 5 10 20 50 100 200))
+  "Values of coins in the United Kingdom, ordered from largest to smallest")
+
+(defun coin-sums (target coins)
+  "Returns the number of unique ways of combining the coin values in COINS to add up to TARGET (note: COINS must be in descending order)"
+  (cond ((< target 0) 0)
+	((zerop target) 1)
+	(t (loop for remaining-coins on coins
+		 for coin = (car remaining-coins)
+		 for remaining = (- target coin)
+		 ;; Only allow this coin or smaller coins, to avoid duplicates (just in different order)
+		 sum (coin-sums remaining remaining-coins)))))
