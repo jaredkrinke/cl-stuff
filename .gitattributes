@@ -1,0 +1,2 @@
+*.lisp text eol=lf
+*.asd text eol=lf
