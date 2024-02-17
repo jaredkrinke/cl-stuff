@@ -192,3 +192,19 @@
     (loop for n from 2 below 1000000 do
       (when (circular-prime-p n)
 	(incf count)))))
+
+;;; Problem 36
+(defun palindromep (a)
+  "Returns non-NIL if sequence A is a palindrome (same forwards as backwards)"
+  (equal a (reverse a)))
+
+(defun palindromic-number-p (n base)
+  "Returns non-NIL if natural number N is a palindrome in base BASE"
+  (palindromep (write-to-string n :base base)))
+
+(defun double-base-palindromes ()
+  (ret (sum 0)
+    (loop for n from 1 below 1000000 do
+      (when (and (palindromic-number-p n 10)
+		 (palindromic-number-p n 2))
+	(incf sum n)))))
