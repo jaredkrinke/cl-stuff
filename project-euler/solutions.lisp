@@ -272,3 +272,22 @@
 			       (> value largest))
 		      (setf largest value)
 		      (format t "~a (~a ~a)~%" largest n x)))))
+
+;;; Problem 39
+(defun max-integer-right-triangles ()
+  (let ((solutions (make-hash-table)))
+    (loop for i from 1 upto 1000 do
+      (loop for j from 1 upto 1000 do
+	(loop for k from 1 upto 1000
+	      for perimeter = (+ i j k)
+	      do (when (and (<= perimeter 1000)
+			    (= (+ (* i i) (* j j))
+			       (* k k)))
+		   (incf (gethash (+ i j k) solutions 0))))))
+    (loop with max = 0
+	  with best = nil
+	  for perimeter being the hash-keys in solutions using (hash-value count)
+	  do (when (> count max)
+	       (setf max count)
+	       (setf best perimeter))
+	  finally (return best))))
