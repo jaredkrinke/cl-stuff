@@ -10,20 +10,24 @@
     (= (* x x)
        n)))
 
-(defun triangular-number-p (n)
-  "Returns non-NIL if N (an integer) is a triangular number (e.g. 1, 3, 6, 15, 21, ...)"
-  (let ((x (1+ (* 8 n))))
-    (squarep x)))
-
 (defun divisiblep (x y)
   "Returns non-NIL if X is divisble by Y"
   (zerop (mod x y)))
 
 (defun permutations (a)
   "Returns a list of all permutations of A"
-  (ret (list nil)
-    (for-each-permutation (lambda (permutation) (push permutation list)) a)))
+  (ret (result nil)
+    (for-each-permutation (lambda (permutation) (push permutation result)) a)))
 
+(defmacro ret ((variable value) &body body)
+  "Creates a local variable named VARIABLE (initialized to VALUE), executes BODY, and returns the value of the variable"
+  `(let ((,variable ,value))
+     ,@body
+     ,variable))
+
+(defmacro multf (place multiplier)
+  "Multiplies PLACE by MULTIPLIER"
+  `(setf ,place (* ,place ,multiplier)))
 
 ;;; Problem 29
 (defun distinct-powers (min max)
@@ -116,7 +120,7 @@
 	     do (loop for equals-index from (1+ multiply-index) below (1- (length *one-through-nine*)) do
 	       (destructuring-bind
 		   (multiplicand multiplier product)
-		   (mapcar #'digits-to-value
+		   (mapcar #'digits->value
 			   (split-by-indices permutation (list multiply-index equals-index)))
 		 ;; Check equation is valid *and* product has not already been counted
 		 (when (and (= (* multiplicand multiplier) product)
@@ -146,8 +150,8 @@
 		 for intersection = (intersection x-digits y-digits)
 		 do (when (= (length intersection) 1)
 		      (let* ((digit (first intersection))
-			     (x-cancelled (digits-to-value (remove digit x-digits)))
-			     (y-cancelled (digits-to-value (remove digit y-digits))))
+			     (x-cancelled (digits->value (remove digit x-digits)))
+			     (y-cancelled (digits->value (remove digit y-digits))))
 			(when (and (not (zerop x-cancelled))
 				   (not (zerop y-cancelled))
 				   (= (/ x-cancelled y-cancelled)
@@ -157,16 +161,6 @@
 	finally (return (denominator product))))
 
 ;;; Problem 34
-(defmacro ret ((variable value) &body body)
-  "Creates a local variable named VARIABLE (initialized to VALUE), executes BODY, and returns the value of the variable"
-  `(let ((,variable ,value))
-     ,@body
-     ,variable))
-
-(defmacro multf (place multiplier)
-  "Multiplies PLACE by MULTIPLIER"
-  `(setf ,place (* ,place ,multiplier)))
-
 (defun factorial (n)
   (ret (product 1)
     (loop for x from n above 1 do
@@ -291,3 +285,67 @@
 	       (setf max count)
 	       (setf best perimeter))
 	  finally (return best))))
+
+;;; Problem 40
+(defun make-champernowne-digit-generator ()
+  (let* ((number 0)
+	 (digits nil))
+    (lambda ()
+      (unless digits
+	(setf digits (digits (incf number))))
+      (ret (result (first digits))
+	(setf digits (rest digits))))))
+
+(defun champernowne-digit-product ()
+  (ret (product 1)
+    (let ((indices (loop for i from 0 upto 6 collect (expt 10 i)))
+	  (generator (make-champernowne-digit-generator)))
+      (loop with i = 1
+	    for index in indices
+	    do (loop while (< i index)
+		     do (funcall generator)
+			(incf i))
+	       (let ((digit (funcall generator)))
+		 (incf i)
+		 (multf product digit))))))
+
+;;; Problem 41
+(defun get-digits (&optional (max 9))
+  (subseq *one-through-nine* 0 max))
+
+(defun largest-pandigital-prime ()
+  (loop for count from 9 above 0 do
+    (let* ((digits (get-digits count))
+	   (permutations (permutations digits))
+	   (primes (loop for permutation in permutations
+			 for value = (digits->value permutation)
+			 when (primep value) collect value)))
+      (when primes
+	(return-from largest-pandigital-prime (reduce #'max primes))))))
+
+;;; Problem 42
+(defun triangular-number-p (n)
+  "Returns non-NIL if N (an integer) is a triangular number (e.g. 1, 3, 6, 15, 21, ...)"
+  (let ((x (1+ (* 8 n))))
+    (squarep x)))
+
+(defun letter->index (letter)
+  "Returns the index of (capital) letter LETTER in the alphabet (e.g. #\A is 1)"
+  (1+ (- (char-code letter) (char-code #\A))))
+
+(defun word->index-sum (word)
+  "Returns the sum of the indexes of the letters in the (capital) string WORD"
+  (reduce #'+ (loop for letter across word collect (letter->index letter))))
+
+(defun triangle-word-p (word)
+  (triangular-number-p (word->index-sum word)))
+
+(defun count-triangle-words ()
+  (let* ((text (uiop:read-file-string "0042_words.txt"))
+	 (quoted-words (uiop:split-string text :separator '(#\,)))
+	 (words (mapcar (lambda (quoted) (subseq quoted 1 (1- (length quoted))))
+			quoted-words)))
+    (ret (count 0)
+      (loop for word in words do
+	(when (triangle-word-p word)
+	  (incf count))))))
