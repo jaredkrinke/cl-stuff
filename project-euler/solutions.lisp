@@ -29,6 +29,16 @@
   (ret (result nil)
     (for-each-permutation (lambda (permutation) (push permutation result)) a)))
 
+(defun for-each-pair (function list)
+  "Runs FUNCTION on each pair of items from LIST, as long as FUNCTION returns non-NIL"
+  (loop for i upfrom 0
+	for a in list
+	do (loop for cell = (nthcdr (1+ i) list) then (rest cell)
+		 for b = (first cell)
+		 while cell
+		 do (unless (funcall function a b)
+		      (return-from for-each-pair)))))
+
 ;;; Problem 29
 (defun distinct-powers (min max)
   "Calculates the number of distinct powers (a ^ b) for min <= a <= max, and same for b"
@@ -414,3 +424,79 @@
 	       (incf count)
 	       (when (>= count 3)
 		 (return-from find-next-geometric-number number))))))
+
+;;; Problem 46
+(defun find-goldbach-contradiction ()
+  (loop with primes = (make-hash-table)
+	with remainders = (make-hash-table)
+	for n upfrom 1
+	for remainder = (* 2 n n)
+	do (setf (gethash remainder remainders) t)
+	   (if (primep n)
+	       (setf (gethash n primes) t)
+	       (when (and (> n 1)
+			  (oddp n)
+			  (loop for prime being the hash-keys in primes
+				do (when (gethash (- n prime) remainders)
+				     (return nil))
+				finally (return t)))
+		 (return-from find-goldbach-contradiction n)))))
+
+;;; Problem 47
+(defun get-prime-factors (n primes)
+  "Returns the distinct prime factors of N, using an ascending list of primes, PRIMES"
+  (loop with factors = nil
+	for prime in primes
+	while (and (> n 1)
+		   (>= n prime))
+	do (loop while (divisiblep n prime)
+		 do (pushnew prime factors)
+		    (setf n (/ n prime)))
+	finally (return (nreverse factors))))
+
+(defun find-consecutive-distinct-prime-factors (&optional (count 3))
+  (loop with primes = nil
+	with primes-tail = nil
+	with relevant = nil
+	for n upfrom 2
+	for i upfrom 0
+	do ;; Create list of primes on the way
+	   (when (primep n)
+	     (let ((new-tail (list n)))
+	       (if primes-tail
+		   (setf (rest primes-tail) new-tail)
+		   (setf primes new-tail))
+	       (setf primes-tail new-tail)))
+	   ;; Record relevant prime factors
+	   (push (get-prime-factors n primes) relevant)
+	   (when (>= i count)
+	     (setf (rest (nthcdr (1- count) relevant)) nil)
+	     ;; All have required count of distinct prime factors
+	     (when (every (lambda (a) (= count (length a))) relevant)
+	       (return (- n (1- count)))))))
+
+;;; Problem 48
+(defun n-to-the-nth-series-digits ()
+  (let* ((value (loop for n from 1 upto 1000 sum (expt n n)))
+	 (digits (digits value))
+	 (end (last digits 10)))
+    (loop for digit in end do (format t "~a" digit))
+    (terpri)))
+
+;;; Problem 49
+(defun prime-permutations ()
+  (loop for a from 1000 upto 9999 do
+    (when (primep a)
+      (let ((a-digits (sort (digits a) #'<)))
+	(loop for increment from 1 upto 3333
+	      for b = (+ a increment)
+	      for c = (+ a increment increment)
+	      do ;; Must all be prime
+		 (when (and (primep b)
+			    (primep c))
+		   (let ((b-digits (sort (digits b) #'<))
+			 (c-digits (sort (digits c) #'<)))
+		     ;; Must all have the same digits
+		     (when (and (equal a-digits b-digits)
+				(equal b-digits c-digits))
+		       (format t "~a~a~a (~a ~a ~a, by ~a)~%" a b c a b c increment)))))))))
