@@ -4,6 +4,16 @@
 (in-package :project-euler)
 
 ;;; Helpers
+(defmacro ret ((variable value) &body body)
+  "Creates a local variable named VARIABLE (initialized to VALUE), executes BODY, and returns the value of the variable"
+  `(let ((,variable ,value))
+     ,@body
+     ,variable))
+
+(defmacro multf (place multiplier)
+  "Multiplies PLACE by MULTIPLIER"
+  `(setf ,place (* ,place ,multiplier)))
+
 (defun squarep (n)
   "Returns non-NIL if natural number N is a square"
   (let ((x (floor (sqrt n))))
@@ -18,16 +28,6 @@
   "Returns a list of all permutations of A"
   (ret (result nil)
     (for-each-permutation (lambda (permutation) (push permutation result)) a)))
-
-(defmacro ret ((variable value) &body body)
-  "Creates a local variable named VARIABLE (initialized to VALUE), executes BODY, and returns the value of the variable"
-  `(let ((,variable ,value))
-     ,@body
-     ,variable))
-
-(defmacro multf (place multiplier)
-  "Multiplies PLACE by MULTIPLIER"
-  `(setf ,place (* ,place ,multiplier)))
 
 ;;; Problem 29
 (defun distinct-powers (min max)
@@ -349,3 +349,68 @@
       (loop for word in words do
 	(when (triangle-word-p word)
 	  (incf count))))))
+
+;;; Problem 43
+(defparameter *zero-through-nine* (loop for x from 0 upto 9 collect x))
+
+(defun sum-divisible-pandigitals ()
+  (ret (sum 0)
+    (let ((tests '((2 2)
+		   (3 3)
+		   (4 5)
+		   (5 7)
+		   (6 11)
+		   (7 13)
+		   (8 17)))
+	  (digitses (permutations *zero-through-nine*)))
+      (loop for digits in digitses do
+	(when (loop for (start-index divisor) in tests
+		    do (unless (divisiblep (digits->value (subseq digits
+								  (1- start-index)
+								  (+ start-index 2)))
+					   divisor)
+			 (return nil))
+		    finally (return t))
+	  (incf sum (digits->value digits)))))))
+
+;;; Problem 44
+(defun find-pentagonal-pair ()
+  (let ((set (make-hash-table)))
+    (loop for n upfrom 1
+	  for number = (/ (* n (- (* 3 n) 1)) 2)
+	  repeat 10000
+	  do (setf (gethash number set) t))
+    (ret (min 1000000000)
+      (loop for pj being the hash-keys in set do
+	(loop for pk being the hash-keys in set
+	      for sum = (+ pj pk)
+	      for difference = (abs (- pj pk))
+	      do (when (and (gethash sum set)
+			    (gethash difference set)
+			    (< difference min))
+		   (format t "~a (~a + ~a = ~a; |~a - ~a| = ~a)~%"
+			   difference
+			   pj pk sum
+			   pj pk difference)
+		   (setf min difference)))))))
+
+;;; Problem 45
+(defun find-next-geometric-number ()
+  (let ((triangles (make-hash-table))
+	(pentagonals (make-hash-table))
+	(hexagonals (make-hash-table)))
+    (loop repeat 100000
+	  for n upfrom 1
+	  for triangle = (/ (* n (+ n 1)) 2)
+	  for pentagonal = (/ (* n (- (* 3 n) 1)) 2)
+	  for hexagonal = (* n (- (* 2 n) 1))
+	  do (setf (gethash triangle triangles) t)
+	     (setf (gethash pentagonal pentagonals) t)
+	     (setf (gethash hexagonal hexagonals) t))
+    (loop with count = 0
+	  for number being the hash-keys in triangles
+	  do (when (and (gethash number pentagonals)
+			(gethash number hexagonals))
+	       (incf count)
+	       (when (>= count 3)
+		 (return-from find-next-geometric-number number))))))
