@@ -39,6 +39,13 @@
 		 do (unless (funcall function a b)
 		      (return-from for-each-pair)))))
 
+(defun for-each-subsequence (function sequence length)
+  "Runs FUNCTION on each subsequence of SEQUENCE of length LENGTH, as long as the result is non-NIL"
+  (loop for offset from 0 upto (- (length sequence) length)
+	for subsequence = (subseq sequence offset (+ offset length))
+	do (unless (funcall function subsequence)
+	     (loop-finish))))
+
 ;;; Problem 29
 (defun distinct-powers (min max)
   "Calculates the number of distinct powers (a ^ b) for min <= a <= max, and same for b"
@@ -500,3 +507,19 @@
 		     (when (and (equal a-digits b-digits)
 				(equal b-digits c-digits))
 		       (format t "~a~a~a (~a ~a ~a, by ~a)~%" a b c a b c increment)))))))))
+
+;;; Problem 50
+(defun consecutive-prime-sum (&optional (max 42))
+  (let* ((prime-list (loop for n from 2 below max when (primep n) collect n))
+	 (primes (coerce prime-list 'vector))
+	 (sums (make-array (length primes) :initial-element 0)))
+    (loop for offset from 0 below (length primes) do
+      (loop for i from 0 below (- (length sums) offset) do
+	(incf (aref sums i)
+	      (aref primes (+ i offset))))
+      (loop for i from 0 below (- (length sums) offset)
+	    for sum across sums
+	    do (when (and (< sum max)
+			  (primep sum))
+		 (format t "~a (~a terms)~%" sum (1+ offset))
+		 (loop-finish))))))
