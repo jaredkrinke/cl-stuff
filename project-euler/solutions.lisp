@@ -3,6 +3,28 @@
 
 (in-package :project-euler)
 
+;;; Helpers
+(defun squarep (n)
+  "Returns non-NIL if natural number N is a square"
+  (let ((x (floor (sqrt n))))
+    (= (* x x)
+       n)))
+
+(defun triangular-number-p (n)
+  "Returns non-NIL if N (an integer) is a triangular number (e.g. 1, 3, 6, 15, 21, ...)"
+  (let ((x (1+ (* 8 n))))
+    (squarep x)))
+
+(defun divisiblep (x y)
+  "Returns non-NIL if X is divisble by Y"
+  (zerop (mod x y)))
+
+(defun permutations (a)
+  "Returns a list of all permutations of A"
+  (ret (list nil)
+    (for-each-permutation (lambda (permutation) (push permutation list)) a)))
+
+
 ;;; Problem 29
 (defun distinct-powers (min max)
   "Calculates the number of distinct powers (a ^ b) for min <= a <= max, and same for b"
@@ -66,13 +88,13 @@
 				     (rest indices)
 				     (+ offset index)))))))
 
-(defun for-each-permutation-recursive (f a &optional tail)
+(defun for-each-permutation (f a &optional tail)
   "Calls F on each permutation of sequence A, optionally consed onto TAIL"
   (cond ((null a) (funcall f tail))
 	(t (loop with length = (length a)
 		 for i from 0 below length
 		 for remaining = (remove-index i a)
-		 do (for-each-permutation-recursive f remaining (cons (elt a i) tail))))))
+		 do (for-each-permutation f remaining (cons (elt a i) tail))))))
 
 (defun digits->value (digits)
   "Returns the value represented by DIGITS, a list of digits in base 10"
@@ -87,7 +109,7 @@
   "Return the sum of all products whose multiplicand, multiplier, and product are 1 through 9 pandigital"
   (let ((products nil)
 	(sum 0))
-    (for-each-permutation-recursive
+    (for-each-permutation
      (lambda (permutation)
        ;; Try all possible splits of this permutation (i.e. where the multiplication and equals signs should go in the equation "multiplicand x multiplier = product")
        (loop for multiply-index from 1 below (- (length *one-through-nine*) 2)
@@ -208,3 +230,45 @@
       (when (and (palindromic-number-p n 10)
 		 (palindromic-number-p n 2))
 	(incf sum n)))))
+
+;;; Problem 37
+(defun truncatable-prime-p (n)
+  (when (primep n)
+    (let* ((digits (digits n))
+	   (length (length digits)))
+      (loop for i from 0 below length
+	    for j from length above 0
+	    do
+	       (unless (and (primep (digits->value (subseq digits i)))
+			    (primep (digits->value (subseq digits 0 j))))
+		 (return-from truncatable-prime-p nil)))
+      t)))
+
+(defun truncatable-primes ()
+  (loop with sum = 0
+	with count = 0
+	for i upfrom 8
+	until (>= count 11)
+	do (when (truncatable-prime-p i)
+	     (incf count)
+	     (incf sum i))
+	finally (return sum)))
+
+;;; Problem 38
+(defun pandigitalp (digits)
+  "Returns non-NIL if DIGITS represents a pandigital number"
+  (equal *one-through-nine*
+	 (sort (copy-seq digits) #'<)))
+
+(defun largest-pandigital-concatenated-product ()
+  ;; All 9-digit pandigital numbers, in descending order
+  (loop with largest = 0
+	for n upfrom 1
+	do (loop for x upfrom 1
+		 for digits = (digits n) then (append digits (digits (* n x)))
+		 for value = (digits->value digits)
+		 while (<= value 999999999)
+		 do (when (and (pandigitalp digits)
+			       (> value largest))
+		      (setf largest value)
+		      (format t "~a (~a ~a)~%" largest n x)))))
