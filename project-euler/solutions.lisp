@@ -523,3 +523,50 @@
 			  (primep sum))
 		 (format t "~a (~a terms)~%" sum (1+ offset))
 		 (loop-finish))))))
+
+;;; Problem 51
+(defun get-primes (&key (min 2) (max 100))
+  "Returns all the primes that are at least MIN and below MAX, as a list"
+  (loop for n from min below max
+	when (primep n) collect n))
+
+(defun pattern-matches-p (pattern digits)
+  "Returns non-NIL if PATTERN matches DIGITS (i.e. all digits are the same, and all :WILDs are the same)"
+  (loop with wild-digit = nil
+	for a in pattern
+	for b in digits
+	do (unless (equal a b)
+	     (if (equal a :wild)
+		 (if wild-digit
+		     (unless (equal wild-digit b)
+		       (return nil))
+		     (setf wild-digit b))
+		 (return nil)))
+	finally (return t)))
+
+(defun prime-digit-replacements (&optional (count 8))
+  ;; Check 2 digits, 3 digits, etc.
+  (loop for digit-count upfrom 2
+	for primes = (get-primes :min (expt 10 (1- digit-count)) :max (expt 10 digit-count))
+	for prime-digits = (mapcar #'digits primes)
+	do ;; For each distinct digit in each prime, replace all of that digit with :WILD
+	   (format t "Checking ~a-digit numbers...~%" digit-count)
+	   (loop for prime in primes
+		 for digits in prime-digits
+		 for distinct-digits = (remove-duplicates digits)
+		 do (loop for digit in distinct-digits
+			  for pattern = (substitute :wild digit digits)
+			  do ;; Count matches amongst prime numbers
+			     ;; TODO: Although this finds the solution, it seems flawed in the case that not all of a digit need to be replaced
+			     (let* ((first-match nil)
+				    (matches (loop with sum = 0
+						   for p in primes
+						   for p-digits in prime-digits
+						   do (when (pattern-matches-p pattern p-digits)
+							(unless first-match
+							  (setf first-match p))
+							(incf sum))
+						   finally (return sum))))
+			       (when (>= matches count)
+				 (format t "~s (~a primes): ~a~%" pattern matches first-match)
+				 (return-from prime-digit-replacements prime)))))))
