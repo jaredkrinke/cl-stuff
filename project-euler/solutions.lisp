@@ -684,7 +684,7 @@
 	  with top-rank = (first (last sorted-ranks))
 	  for rank in (rest sorted-ranks)
 	  for i upfrom 1
-	  do ;; Check for consecutive ranks (with an exception for the "low flush" ace)
+	  do ;; Check for consecutive ranks (with an exception for the "low straight" ace)
 	     (unless (or (= rank (+ start i))
 			 (and (= start 2)
 			      (= i 4)
