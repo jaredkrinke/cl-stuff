@@ -767,3 +767,33 @@
 (defun score-poker-hands ()
   (loop for line in (uiop:read-file-lines "0054_poker.txt")
 	sum (score-poker-line line)))
+
+;;; Problem 55
+(defun lychrel-number-p (n)
+  "Returns non-NIL if adding the reverse isn't a palindrome after 50 iterations"
+  (loop with first = t
+	repeat 50
+	do (let ((string (write-to-string n)))
+	     (when (and (not first)
+			(palindromep string))
+	       (return nil))
+	     (setf n
+		   (+ n
+		      (parse-integer (nreverse string))))
+	     (setf first nil))
+	finally (return t)))
+
+(defun lychrel-numbers ()
+  (loop for n from 1 below 10000
+	sum (if (lychrel-number-p n) 1 0)))
+
+;;; Problem 56
+(defun sum-digits (n)
+  "Returns the sum of the digits in N (base 10)"
+  (loop for digit in (digits n)
+	sum digit))
+
+(defun powerful-digit-sum ()
+  (loop for a from 1 below 100
+	maximize (loop for b from 1 below 100
+		       maximize (sum-digits (expt a b)))))
