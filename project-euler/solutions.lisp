@@ -570,3 +570,200 @@
 			       (when (>= matches count)
 				 (format t "~s (~a primes): ~a~%" pattern matches first-match)
 				 (return-from prime-digit-replacements prime)))))))
+
+;;; Problem 52
+(defun sets-equal-p (a b)
+  "Returns non-NIL when (list) sets A and B are equal"
+  (null (set-exclusive-or a b)))
+
+(defun permuted-multiples ()
+  (loop for x upfrom 1
+	for digits = (digits x)
+	for result = (loop for i from 2 upto 6
+			   do (unless (sets-equal-p digits (digits (* i x)))
+				(return nil))
+			   finally (return t))
+	until result
+	finally (return x)))
+
+;;; Problem 53
+(defun n-choose-r (n r)
+  "Computes N choose R (i.e. the number of ways of selecting R items from N)"
+  (/ (factorial n)
+     (* (factorial r) (factorial (- n r)))))
+
+(defun combinatoric-selections ()
+  (loop with count = 0
+	for n from 1 upto 100
+	do (loop for r from 1 upto n do
+	  (when (> (n-choose-r n r) 1000000)
+	    (incf count)))
+	finally (return count)))
+
+;;; Problem 54
+(defstruct poker-card
+  rank
+  suit)
+
+(defparameter *poker-suits* '((#\H . hearts)
+			      (#\D . diamonds)
+			      (#\S . spades)
+			      (#\C . clubs))
+  "A-list of poker suit letters to suits")
+
+(defparameter *poker-high-ranks* '((#\T . 10)
+				   (#\J . 11)
+				   (#\Q . 12)
+				   (#\K . 13)
+				   (#\A . 14))
+  "A-list of high rank characters (10, jack, queen, king, ace) to value")
+
+;; TODO: Better to sort here, check for flush, and throw away suits at some point...
+(defun parse-poker-hand (string)
+  "Parses a poker hand string (e.g. '5H 5C 6S 7S KD') into a list of POKER-CARDs"
+  (loop for offset from 0 upto 12 by 3
+	for rank-char = (aref string offset)
+	for suit-char = (aref string (1+ offset))
+	collect (make-poker-card :rank (or (digit-char-p rank-char)
+					   (rest (assoc rank-char *poker-high-ranks*)))
+				 :suit (rest (assoc suit-char *poker-suits*)))))
+
+(defun poker-n-of-a-kind-internal (ranks n)
+  "If there are N of the same rank in RANKS, returns the (highest) matching rank, as well as remaining ranks (in descending order)"
+  (let ((sorted-ranks (sort (copy-seq ranks) #'>)))
+    (loop with last-rank = (first sorted-ranks)
+	  with count = 1
+	  for rank in (rest sorted-ranks)
+	  do (if (eql rank last-rank)
+		 (progn
+		   (incf count)
+		   (when (= n count)
+		     (return (values rank
+				     (remove rank sorted-ranks)))))
+		 (progn
+		   (setf count 1)
+		   (setf last-rank rank)))
+	  finally (return (values nil nil)))))
+
+(defun poker-n-of-a-kind-p (cards n)
+  "Returns non-NIL if there are N of the same rank in RANKS, as well as a tie-breaker list"
+  (let ((ranks (mapcar #'poker-card-rank cards)))
+    (multiple-value-bind (matching-rank remaining-ranks) (poker-n-of-a-kind-internal ranks n)
+      (if matching-rank
+	  (values t (cons matching-rank remaining-ranks))
+	  (values nil nil)))))
+
+(defun poker-two-pair-p (cards)
+  "Returns non-NIL if CARDS contains two pairs of the same rank, as well as a tie-breaker list (high card"
+  (let ((ranks (mapcar #'poker-card-rank cards)))
+    (multiple-value-bind (matching-rank remaining-ranks) (poker-n-of-a-kind-internal ranks 2)
+      (when matching-rank
+	(multiple-value-bind (low-matching-rank last-ranks) (poker-n-of-a-kind-internal remaining-ranks 2)
+	  (when low-matching-rank
+	    (values matching-rank (list matching-rank low-matching-rank (first last-ranks)))))))))
+
+(defun poker-full-house-p (cards)
+  "Returns non-NIL if CARDS contains three of a kind and two of a kind, along with tie-breaker rank list"
+  (let* ((ranks (mapcar #'poker-card-rank cards)))
+    (multiple-value-bind (triple-rank remaining-ranks) (poker-n-of-a-kind-internal ranks 3)
+      (when (poker-n-of-a-kind-internal remaining-ranks 2)
+	(values triple-rank (list triple-rank))))))
+
+(defun poker-flush-p (cards)
+  "Returns non-NIL if all poker cards in CARDS are the same suit, as well as tie-breakers"
+  (let ((suit (poker-card-suit (first cards))))
+    (values (every (lambda (card) (eql suit (poker-card-suit card)))
+		   (rest cards))
+	    (sort (mapcar #'poker-card-rank cards) #'>))))
+
+(defun poker-straight-p (cards)
+  "Returns non-NIL if all poker cards have consecutive ranks, as well as tie-breaker (high card) list"
+  ;; Note: ACE is handled differently for a "low" flush (ace through 5)
+  (let ((sorted-ranks (sort (mapcar #'poker-card-rank cards) #'<)))
+    (loop with start = (first sorted-ranks)
+	  with top-rank = (first (last sorted-ranks))
+	  for rank in (rest sorted-ranks)
+	  for i upfrom 1
+	  do ;; Check for consecutive ranks (with an exception for the "low flush" ace)
+	     (unless (or (= rank (+ start i))
+			 (and (= start 2)
+			      (= i 4)
+			      (= rank 14)
+			      (setf top-rank 5)))
+	       (return (values nil nil)))
+	  finally (return (values t (list top-rank))))))
+
+(defun poker-straight-flush-p (cards)
+  "Returns non-NIL if both a flush and a straight, along with tie-breaker (high card) list"
+  (and (poker-flush-p cards)
+       (poker-straight-p cards)))
+
+(defparameter *poker-hands*
+  `((straight-flush . poker-straight-flush-p)
+    (four-of-a-kind . ,(lambda (cards) (poker-n-of-a-kind-p cards 4)))
+    (full-house . poker-full-house-p)
+    (flush . poker-flush-p)
+    (straight . poker-straight-p)
+    (three-of-a-kind . ,(lambda (cards) (poker-n-of-a-kind-p cards 3)))
+    (two-pair . poker-two-pair-p)
+    (one-pair . ,(lambda (cards) (poker-n-of-a-kind-p cards 2)))
+    (high-card . ,(lambda (cards) (values t (sort (mapcar #'poker-card-rank cards) #'>)))))
+  "A-list of poker hands, all ranked in descending order, to test functions which return whether there was a match and a list of tie-breakers")
+
+(defun classify-poker-hand (cards)
+  "Classifies a list of POKER-CARDs, returning the type of hand, its priority (lower is better), and any tie-breakers"
+  (loop for offset upfrom 0
+	for (name . test) in *poker-hands*
+	do (multiple-value-bind (matched tie-breakers) (funcall test cards)
+	     (when matched
+	       (return (values name offset tie-breakers))))))
+
+(defmethod print-object ((object poker-card) stream)
+  (let ((rank (poker-card-rank object))
+	(suit (poker-card-suit object)))
+    (case rank
+      (11 (write-string " J" stream))
+      (12 (write-string " Q" stream))
+      (13 (write-string " K" stream))
+      (14 (write-string " A" stream))
+      (t (format stream "~2d" rank)))
+    (ecase suit
+      (clubs (write-char #\Black_Club_Suit stream))
+      (diamonds (write-char #\Black_Diamond_Suit stream))
+      (hearts (write-char #\Black_Heart_Suit stream))
+      (spades (write-char #\Black_Spade_Suit stream)))))
+
+(defun compare-poker-hands (left right)
+  "Returns 'LEFT if LEFT wins, 'TIE if a tie, and 'RIGHT if RIGHT wins"
+  (multiple-value-bind (left-name left-offset left-tie-breakers) (classify-poker-hand left)
+    (declare (ignore left-name))
+    (multiple-value-bind (right-name right-offset right-tie-breakers) (classify-poker-hand right)
+      (declare (ignore right-name))
+      (if (= left-offset right-offset)
+	  (loop for left-breaker in left-tie-breakers
+		for right-breaker in right-tie-breakers
+		do (unless (= left-breaker right-breaker)
+		     (return (if (> left-breaker right-breaker)
+				 'left
+				 'right)))
+		finally (return 'tie))
+	  (if (< left-offset right-offset) ; Note: lower offset is better!
+	      'left
+	      'right)))))
+
+(defun score-poker-line (line)
+  (let ((hand-strings (split-by-indices line '(15))))
+    (destructuring-bind (player1 player2) (mapcar #'parse-poker-hand hand-strings)
+      (let ((won (eql (compare-poker-hands player1 player2) 'left)))
+	(format t "~a ~s~%~s (~s)~%~s (~s~%~%"
+		(if won "WON " "LOST")
+		line
+		(sort (copy-seq player1) #'> :key #'poker-card-rank)
+		(classify-poker-hand player1)
+		(sort (copy-seq player2) #'> :key #'poker-card-rank)
+		(classify-poker-hand player2))
+	(if won 1 0)))))
+
+(defun score-poker-hands ()
+  (loop for line in (uiop:read-file-lines "0054_poker.txt")
+	sum (score-poker-line line)))
