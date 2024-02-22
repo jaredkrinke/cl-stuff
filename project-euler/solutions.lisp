@@ -797,3 +797,60 @@
   (loop for a from 1 below 100
 	maximize (loop for b from 1 below 100
 		       maximize (sum-digits (expt a b)))))
+
+;;; Problem 57
+(defun expand-root-two-term (iterations)
+  (if (= iterations 0)
+      0
+      (/ 1 (+ 2 (expand-root-two-term (1- iterations))))))
+
+(defun expand-root-two (iterations)
+  (+ 1 (expand-root-two-term iterations)))
+
+(defun square-root-convergents ()
+  (loop for iterations from 1 upto 1000
+	for expansion = (expand-root-two iterations)
+	sum (if (> (length (digits (numerator expansion)))
+		   (length (digits (denominator expansion))))
+		1
+		0)))
+
+;;; Problem 58
+;; Diagonal numbers: 1,
+;;                   3, 5, 7, 9, (by 2s)
+;;                   13, 17, 21, 25, (by 4s)
+;;                   31, 37, 43, 49 (by 6s)
+;;                   ... (by 8s)
+
+(defun spiral-primes ()
+  (loop with primes = 0
+	with index = 1
+	for count upfrom 1 by 4
+	for side-length upfrom 1 by 2
+	for layer upfrom 1
+	for fraction-prime = (/ primes count)
+	while (or (= count 1)
+		  (> fraction-prime
+		     0.1))
+	do (loop repeat 4
+		 do (when (primep (incf index (* 2 layer)))
+		      (incf primes)))
+	finally (return side-length)))
+
+;;; Problem 59
+(defun every-nth (list n &optional (offset 0))
+  "Returns every Nth item from LIST (optionally offset by OFFSET), as a new list"
+  (loop for item in (nthcdr offset list) by (lambda (l) (nthcdr n l))
+	collect item))
+
+(defun xor-decryption ()
+  (let ((key-length 3)
+	(encrypted-bytes (mapcar #'parse-integer
+				 (uiop:split-string (uiop:read-file-string "0059_cipher.txt")
+						    :separator '(#\,)))))
+    ;; Split up into separate single-byte XOR encryption problems
+    (loop with count = (length encrypted-bytes)
+	  for offset from 0 below key-length
+	  for bytes = (every-nth encrypted-bytes key-length offset)
+	  sum (loop for byte across (halp/crypto:decrypt-single-byte-xor bytes)
+		    sum byte))))
