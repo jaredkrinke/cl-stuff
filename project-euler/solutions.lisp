@@ -24,6 +24,25 @@
   "Returns non-NIL if X is divisble by Y"
   (zerop (mod x y)))
 
+(defun for-each-subset (function n a &optional tail)
+  "Calls FUNCTION on each subset of A of size N, optionally consed onto TAIL"
+  (cond ((= n 0) (funcall function tail))
+	(t (loop for (item . remaining) on a do
+	  (for-each-subset function (1- n) remaining (cons item tail))))))
+
+(defun subsets (a n)
+  "Returns a list of all subsets of A of size N"
+  (ret (result nil)
+    (for-each-subset (lambda (subset) (push subset result)) n a)))
+
+(defun for-each-permutation (f a &optional tail)
+  "Calls F on each permutation of sequence A, optionally consed onto TAIL"
+  (cond ((null a) (funcall f tail))
+	(t (loop with length = (length a)
+		 for i from 0 below length
+		 for remaining = (remove-index i a)
+		 do (for-each-permutation f remaining (cons (elt a i) tail))))))
+
 (defun permutations (a)
   "Returns a list of all permutations of A"
   (ret (result nil)
@@ -37,7 +56,8 @@
 		 for b = (first cell)
 		 while cell
 		 do (unless (funcall function a b)
-		      (return-from for-each-pair)))))
+		      (return-from for-each-pair nil))))
+  t)
 
 (defun for-each-subsequence (function sequence length)
   "Runs FUNCTION on each subsequence of SEQUENCE of length LENGTH, as long as the result is non-NIL"
@@ -108,14 +128,6 @@
 		   (split-by-indices (subseq sequence index)
 				     (rest indices)
 				     (+ offset index)))))))
-
-(defun for-each-permutation (f a &optional tail)
-  "Calls F on each permutation of sequence A, optionally consed onto TAIL"
-  (cond ((null a) (funcall f tail))
-	(t (loop with length = (length a)
-		 for i from 0 below length
-		 for remaining = (remove-index i a)
-		 do (for-each-permutation f remaining (cons (elt a i) tail))))))
 
 (defun digits->value (digits)
   "Returns the value represented by DIGITS, a list of digits in base 10"
@@ -849,8 +861,47 @@
 				 (uiop:split-string (uiop:read-file-string "0059_cipher.txt")
 						    :separator '(#\,)))))
     ;; Split up into separate single-byte XOR encryption problems
-    (loop with count = (length encrypted-bytes)
-	  for offset from 0 below key-length
+    (loop for offset from 0 below key-length
 	  for bytes = (every-nth encrypted-bytes key-length offset)
 	  sum (loop for byte across (halp/crypto:decrypt-single-byte-xor bytes)
 		    sum byte))))
+
+;;; Problem 60
+(defun concatenatable-primes-p (n m)
+  "Returns non-NIL if N and M, when concatenated in either order, result in primes"
+  (let ((n-digits (digits n))
+	(m-digits (digits m)))
+    (and (primep (digits->value (append n-digits m-digits)))
+	 (primep (digits->value (nconc m-digits n-digits))))))
+
+(defun concatenatable-primes-set-p (set &key (concatenatable-primes-p 'concatenatable-primes-p))
+  "Returns non-NIL if all pairs of numbers in SET when concatenated either way result in primes"
+  (flet ((matchp (n m) (funcall concatenatable-primes-p n m)))
+    (for-each-pair #'matchp set)))
+
+(defun memoize (function)
+  "Returns a memoized version of FUNCTION"
+  (let ((input-to-results (make-hash-table :test 'equal)))
+    (lambda (&rest input)
+      (multiple-value-bind (result found) (gethash input input-to-results)
+	(if found
+	    result
+	    (setf (gethash input input-to-results) (apply function input)))))))
+
+(defun prime-pair-sets (&optional (set-size 4) (max 1000))
+  ;; Memoize concatenatable-primes-p to avoid redundant checks
+  (let* ((primes (get-primes :max max))
+	 (sets (mapcar #'list primes))
+	 (fast-pair-test (memoize #'concatenatable-primes-p)))
+    ;; Incrementally try larger and larger sets
+    (loop for i from 2 upto set-size do
+      (format t "Checking set size ~a...~%" i)
+      (setf sets (loop for set in sets
+		       nconc (loop for prime in primes
+				   for new-set = (cons prime set)
+				   when (concatenatable-primes-set-p
+					 new-set
+					 :concatenatable-primes-p fast-pair-test)
+				     collect new-set))))
+    (loop for set in sets
+	  minimize (reduce #'+ set))))
