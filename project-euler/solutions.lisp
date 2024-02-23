@@ -1010,3 +1010,17 @@
 	  nil
 	  permutation)))
      type-offsets)))
+
+;;; Problem 62
+(defun cubic-permutations (&optional (count 5))
+  ;; Keep track of mapping of digits -> cubes, in order to count permutations
+  (loop with digits-to-count = (make-hash-table :test 'equal)
+	for i upfrom 1
+	for cube = (expt i 3)
+	for digits = (digits cube)
+	for sorted-digits = (sort digits #'<)
+	do (push cube (gethash sorted-digits digits-to-count))
+	   (let ((cubes (gethash sorted-digits digits-to-count)))
+	     (when (= (length cubes)
+		      count)
+	       (return-from cubic-permutations (apply #'min cubes))))))
