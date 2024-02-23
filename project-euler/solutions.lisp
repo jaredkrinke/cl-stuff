@@ -66,6 +66,42 @@
 	do (unless (funcall function subsequence)
 	     (loop-finish))))
 
+(defun for-each-combination (function list n)
+  "Calls FUNCTION with a list for each combination of size N from LIST"
+  (labels ((recurse (list n set)
+	     (cond ((zerop n) (funcall function set))
+		   (t (loop for (item . rest) on list do
+		     (recurse rest (1- n) (cons item set)))))))
+    (recurse list n nil)))
+
+(defun for-each-combination-from-lists (function lists)
+  "Calls FUNCTION with a list for each combination of an item from each of the lists in LISTS"
+  (labels ((recurse (lists set)
+	     (cond ((null lists) (funcall function set))
+		   (t (loop for item in (first lists) do
+		     (recurse (rest lists) (cons item set)))))))
+    (recurse lists nil)))
+
+(defun list->hash-set (list &key (test 'eql))
+  "Returns a hash table with elements of LIST as keys, with values set to T"
+  (ret (set (make-hash-table :test test))
+    (loop for item in list do
+      (setf (gethash item set) t))))
+
+;; Progress indicator
+(let ((progress 0)
+      (progress-max 100)
+      (progress-interval 1000000))
+  (defun reset-progress (max)
+    (format t "Tracking progress (out of ~a)...~%" max)
+    (setf progress 0)
+    (setf progress-max max)
+    (setf progress-interval (ceiling (/ progress-max 100))))
+  (defun note-progress ()
+    (when (zerop (mod (incf progress) progress-interval))
+      (format t "Progress: ~a (~a%)~%" progress (floor (* 100 (/ progress progress-max)))))
+    progress))
+
 ;;; Problem 29
 (defun distinct-powers (min max)
   "Calculates the number of distinct powers (a ^ b) for min <= a <= max, and same for b"
@@ -905,3 +941,72 @@
 				     collect new-set))))
     (loop for set in sets
 	  minimize (reduce #'+ set))))
+
+;;; Problem 61
+;; Failed approaches: permuting 6 two-digit values and looking for ones in each
+;; set, permuting values and checking for cyclicality
+
+;; Approach: Try all permutations of each type/class (triangle, square, etc.)
+;; and then find cyclical values, because there are only 720 permutations and,
+;; using a tree of prefixes, each permutation can be tested fairly quickly
+(defun get-polygonal-numbers (n &key (min 1010) (max 9999))
+  "Generates N-agonal numbers between MIN and MAX (inclusive)"
+  (let ((s (- n 2))
+	(start-index 1))
+    (flet ((compute (m)
+	     (* 1/2
+		m
+		(+ (* s m) (- 2 s)))))
+      ;; Find where value hits MIN threshold
+      (loop for i upfrom 1
+	    for number = (compute i)
+	    until (>= number min)
+	    finally (setf start-index i))
+      ;; Collect values
+      (loop for i upfrom start-index
+	    for number = (compute i)
+	    while (<= number max)
+	    collect number))))
+
+(defstruct polygonal-set
+  values
+  prefix-to-values)
+
+(defun create-polygonal-set (sides)
+  (let ((values (get-polygonal-numbers sides))
+	(prefix-to-values (make-hash-table)))
+    (loop for value in values
+	  for prefix = (floor (/ value 100))
+	  do (push value (gethash prefix prefix-to-values)))
+    (make-polygonal-set :values values
+			:prefix-to-values prefix-to-values)))
+
+(defun for-each-complete-path (function prefix sets &optional path)
+  "Calls FUNCTION on each path through each polygonal set in SETS, ensuring the next value starts with PREFIX"
+  (cond ((null sets) (funcall function (reverse path)))
+	(t (let* ((set (first sets))
+		  (values (if prefix
+			      (gethash prefix (polygonal-set-prefix-to-values set))
+			      (polygonal-set-values set))))
+	     (loop for value in values
+		   for suffix = (mod value 100)
+		   do (for-each-complete-path function suffix (rest sets) (cons value path)))))))
+
+(defun cyclical-figurate-numbers (&optional (min-sides 3) (max-sides 8))
+  (let* ((sets (loop for sides from min-sides upto max-sides
+		     collect (create-polygonal-set sides)))
+	 (type-offsets (loop for set in sets for i upfrom 0 collect i)))
+    ;; Try each permutation of polygonal sets (triangle, square, etc.) and then try to find a cyclical sequence
+    (for-each-permutation
+     (lambda (offsets)
+       (let ((permutation (loop for offset in offsets collect (nth offset sets))))
+	 (for-each-complete-path
+	  (lambda (path)
+	    ;; Ensure path wraps around to the beginning
+	    (let ((first (floor (/ (first path) 100)))
+		  (last (mod (first (last path)) 100)))
+	      (when (= first last)
+		(return-from cyclical-figurate-numbers (values (reduce #'+ path) path)))))
+	  nil
+	  permutation)))
+     type-offsets)))
