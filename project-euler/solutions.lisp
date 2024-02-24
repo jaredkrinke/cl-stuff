@@ -1024,3 +1024,9 @@
 	     (when (= (length cubes)
 		      count)
 	       (return-from cubic-permutations (apply #'min cubes))))))
+
+;;; Problem 63
+;; Solved (on paper) with actual math!
+(defun powerful-digit-counts ()
+  (loop for digit from 1 upto 9
+	sum (1+ (floor (/ (- (log digit 10)) (- (log digit 10) 1))))))
