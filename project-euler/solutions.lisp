@@ -19,10 +19,11 @@
   `(setf ,place (* ,place ,multiplier)))
 
 (defun squarep (n)
-  "Returns non-NIL if natural number N is a square"
+  "Returns the (natural number) square root for N, if natural number N is a square"
   (let ((x (floor (sqrt n))))
-    (= (* x x)
-       n)))
+    (when (= (* x x)
+	     n)
+      x)))
 
 (defun divisiblep (x y)
   "Returns non-NIL if X is divisble by Y"
@@ -1050,11 +1051,13 @@
 	with a = a0
 	with m = 0
 	with d = 1
+	for constants = (list a0) then (cons a constants)
 	for index upfrom 1
 	for state = (list a m d)
 	for previous-index = (gethash state states)
 	do (when previous-index
-	     (return (- index previous-index)))
+	     (return (values (- index previous-index)
+			     (reverse (rest constants)))))
 	   (setf (gethash state states) index)
 	   (setf m (- (* d a) m)) ; By subtracting A, inverting, and moving root to numerator
 	   (setf d (/ (- n (* m m)) d)) ; Same process as previous
@@ -1090,3 +1093,26 @@
 	 (constants (loop repeat 100 collect (funcall generator))))
     (reduce #'+
 	    (digits (numerator (compute-continued-fraction constants))))))
+
+;;; Problem 66
+;; Note: Naively testing all equations in parallel for increasing X was too
+;; slow, so I had to look up the math.
+;;
+;; (EXPT (/ X Y) 2) is (+ D (EXPT Y -2)), which is approximately D, thus (/ X Y)
+;; is approximately (SQRT D), so it might have been worth just trying the
+;; continued fraction approximations, but I just looked up the formula...
+(defun find-pell-solution (n)
+  "Returns (hopefully) a minimal integer solution to Pell's equation with D = N"
+  (multiple-value-bind (period constants) (find-square-root-period n)
+    (if (evenp period)
+	(compute-continued-fraction (subseq constants 0 (1- (length constants))))
+	(let ((repeating (rest constants)))
+	  (compute-continued-fraction (append constants
+					      (subseq repeating 0 (1- (length repeating)))))))))
+
+(defun diophantine-equation ()
+  (first (halp:find-max
+	  #'second
+	  (loop for d from 2 upto 1000
+		unless (squarep d) collect (list d
+						 (numerator (find-pell-solution d)))))))
