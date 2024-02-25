@@ -1,4 +1,8 @@
 (defpackage :project-euler
+  (:import-from :cl-coroutine
+		#:defcoroutine
+		#:make-coroutine
+		#:yield)
   (:use :cl))
 
 (in-package :project-euler)
@@ -1030,3 +1034,59 @@
 (defun powerful-digit-counts ()
   (loop for digit from 1 upto 9
 	sum (1+ (floor (/ (- (log digit 10)) (- (log digit 10) 1))))))
+
+;;; Problem 64
+(defun compute-floor-of-square-root (n)
+  "Returns the floor of the square root of N"
+  (loop for last = nil then i
+	for i upfrom 1
+	when (> (* i i) n)
+	  return last))
+
+(defun find-square-root-period (n)
+  "Returns the period of the constants in the continued fraction which represents (SQRT N)"
+  (loop with states = (make-hash-table :test 'equal)
+	with a0 = (compute-floor-of-square-root n)
+	with a = a0
+	with m = 0
+	with d = 1
+	for index upfrom 1
+	for state = (list a m d)
+	for previous-index = (gethash state states)
+	do (when previous-index
+	     (return (- index previous-index)))
+	   (setf (gethash state states) index)
+	   (setf m (- (* d a) m)) ; By subtracting A, inverting, and moving root to numerator
+	   (setf d (/ (- n (* m m)) d)) ; Same process as previous
+	   (setf a (floor (/ (+ a0 m) d))))) ; The constant is just the floor of the new fraction (... had to look this one up...)
+
+(defun odd-period-square-roots ()
+  (loop for n from 1 upto 10000
+	sum (if (and (not (squarep n))
+		     (oddp (find-square-root-period n)))
+		1
+		0)))
+
+;;; Problem 65
+(defun compute-continued-fraction (constants)
+  "Returns the continued fraction using CONSTANTS"
+  (let ((rest (rest constants)))
+    (+ (first constants)
+       (if rest
+	   (/ 1 (compute-continued-fraction rest))
+	   0))))
+
+(defcoroutine generate-e-continued-fraction-constants ()
+  (yield 2)
+  (yield 1)
+  (yield 2)
+  (loop for i upfrom 2 do
+    (yield 1)
+    (yield 1)
+    (yield (* 2 i))))
+
+(defun convergents-of-e ()
+  (let* ((generator (make-coroutine 'generate-e-continued-fraction-constants))
+	 (constants (loop repeat 100 collect (funcall generator))))
+    (reduce #'+
+	    (digits (numerator (compute-continued-fraction constants))))))
