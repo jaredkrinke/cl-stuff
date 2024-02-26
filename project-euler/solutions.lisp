@@ -1171,3 +1171,71 @@
 					      digit-lists))
 	     (relevant-numbers (mapcar #'digits->value relevant-digit-lists)))
 	(reduce #'max relevant-numbers)))))
+
+;;; Problem 69
+;; Empirically, this just looks like a matter of finding the largest
+;; product of the first prime numbers
+(defun totient-maximum (&optional (max 1000000))
+  (loop with value = 1
+	for p upfrom 2
+	do (when (primep p)
+	     (let ((next (* value p)))
+	       (if (> next max)
+		   (return value)
+		   (setf value next))))))
+
+;;; Problem 70
+(defun permutationp (a b)
+  "Returns non-NIL if A is a permutation of B"
+  (equal (sort (copy-seq a) #'<)
+	 (sort (copy-seq b) #'<)))
+
+(defun compute-totients (&optional max)
+  "Computes totients from 1 up to MAX, returning a vector indexed by N"
+  (ret (totients (make-array (1+ max)))
+    (reset-progress max)
+    ;; Initialize to N
+    (loop for n from 1 upto max do
+      (setf (aref totients n) n))
+    ;; For each prime, multiply applicable totients
+    (loop for p from 2 upto max do
+      (note-progress)
+      (when (primep p)
+	(loop for n from p upto max by p do
+	  (multf (aref totients n) (/ (1- p) p)))))))
+
+(defun totient-permutation (&optional (max 10000000))
+  (let ((totients (compute-totients max)))
+    (reset-progress max)
+    (first (halp:find-min
+	    #'second
+	    (loop for n from 2 upto max
+		  for digits = (digits n)
+		  for totient = (aref totients n)
+		  when (progn (note-progress) (permutationp digits (digits totient)))
+		    collect (list n (/ n totient)))))))
+
+;; Note: not actually used, but this is what compute-totients was
+;; based on
+(defun totient (n primes)
+  "Returns the 'totient' of N"
+  (reduce #'* (cons n (loop for p in (get-prime-factors n primes)
+			    collect (- 1 (/ 1 p))))))
+
+;;; Problem 71
+;; Very naive approach: just find a fraction that has 1 subtracted
+;; from the numerator of a multiple of 3/7
+(defun ordered-fractions (&optional (max 1000000))
+  (let* ((reference (/ 3 7))
+	 (numerator (numerator reference))
+	 (denominator (denominator reference)))
+    (loop with best = 0
+	  for m from 2 upto max
+	  for n = (1- (* m numerator))
+	  for d = (* m denominator)
+	  for fraction = (/ n d)
+	  do (when (and (< (denominator fraction) max)
+			(< fraction reference)
+			(> fraction best))
+	       (setf best fraction))
+	  finally (return (numerator best)))))

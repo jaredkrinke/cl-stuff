@@ -124,3 +124,6 @@
 [submodule "deps/cl-competitive"]
 	path = deps/cl-competitive
 	url = https://github.com/privet-kitty/cl-competitive.git
+[submodule "deps/iterate"]
+	path = deps/iterate
+	url = https://gitlab.common-lisp.net/iterate/iterate.git
