@@ -1116,3 +1116,58 @@
 	  (loop for d from 2 upto 1000
 		unless (squarep d) collect (list d
 						 (numerator (find-pell-solution d)))))))
+
+;;; Problem 68
+(defun all-equal-p (list &key (test 'eql))
+  "Returns non-NIL if all items in LIST are equal (according to TEST)"
+  (every test list (rest list)))
+
+(defun rotate-list (list offset)
+  "Returns a new list that is LIST, but with elements rotated by (nonnegative) OFFSET"
+  (loop repeat (length list)
+	for cell = (nthcdr offset list) then (or (rest cell) list)
+	collect (first cell)))
+
+(defun find-min-index (list &key (key 'identity))
+  "Returns the index of the minimum value of LIST, optionally using KEY to retrieve the value from the item"
+  (loop with best = nil
+	with best-index = nil
+	for index upfrom 0
+	for item in list
+	for value = (funcall key item)
+	do (when (or (null best)
+		     (< value best))
+	     (setf best value)
+	     (setf best-index index))
+	finally (return best-index)))
+
+(defun magic-n-gon-ring (&optional (n 10) (max-digits 16))
+  ;; Represent figure as a list of numbers, with lines represented as lists of
+  ;; indices into the first list
+  (let* ((values (loop for i from 1 upto n collect i))
+	 (line-count (floor (/ n 2)))
+	 (lines (loop for i from 0 below line-count
+		      collect (list (+ i line-count) i (mod (1+ i) line-count)))))
+    (flet ((get-line-values (values line)
+	     (loop for index in line collect (elt values index)))
+	   (sum (a) (reduce #'+ a)))
+      (let* ((strings-raw (loop for permutation in (permutations values) ;'((1 3 2 5 4 6))
+				for line-values = (loop for line in lines
+							collect (get-line-values permutation line))
+				for sums = (mapcar #'sum line-values)
+				when (all-equal-p sums)
+				  collect line-values))
+	     ;; Order clockwise, starting with lowest external node value
+	     (ordered-strings (loop for string in strings-raw
+				    for min-index = (find-min-index string :key #'first)
+				    collect (rotate-list string min-index)))
+	     ;; Probably could have filtered out rotations in a smarter way
+	     (strings (remove-duplicates ordered-strings :test 'equal))
+	     (digit-lists (loop for string in strings
+				collect (loop for line in string
+					      nconc (loop for n in line nconc (digits n)))))
+	     ;; N.B. There is a limit on the number of digits!
+	     (relevant-digit-lists (remove-if (lambda (digits) (> (length digits) max-digits))
+					      digit-lists))
+	     (relevant-numbers (mapcar #'digits->value relevant-digit-lists)))
+	(reduce #'max relevant-numbers)))))
