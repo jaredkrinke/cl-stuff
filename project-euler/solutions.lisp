@@ -93,6 +93,26 @@
     (loop for item in list do
       (setf (gethash item set) t))))
 
+(defun partition (list indices)
+  "Partitions LIST, splitting before INDICES"
+  (loop with partitions = nil
+	with start = 0
+	for index in indices
+	do (push (subseq list start index) partitions)
+	   (setf start index)
+	finally (return (nreverse (push (subseq list start) partitions)))))
+
+(defun for-each-partition (function list)
+  "Runs FUNCTION on each partitioning of LIST, with each partition having at most MAX-SIZE elements"
+  (labels ((recurse (remaining index indices)
+	     (cond ((null remaining)
+		    (funcall function
+			     (partition list (reverse indices))))
+		   (t (recurse (rest remaining) (1+ index) indices)
+		      (unless (zerop index)
+			(recurse (rest remaining) (1+ index) (cons index indices)))))))
+    (recurse list 0 nil)))
+
 ;; Progress indicator
 (let ((progress 0)
       (progress-max 100)
@@ -1307,3 +1327,86 @@
 	  sum (if (= (aref counts n) 1)
 		  1
 		  0))))
+
+;;; Problem 79
+(defun passcode-derivation ()
+  (let ((characters nil)
+	(edges nil)
+	(lines (uiop:read-file-lines "0079_keylog.txt")))
+    (loop for line in lines
+	  for length = (length line)
+	  do (loop for i from 0 below length
+		   for character = (elt line i)
+		   do (pushnew character characters)
+		      (loop for j from (1+ i) below length
+			    do (pushnew (cons character (elt line j)) edges :test 'equal))))
+    ;; Topological sort
+    (loop while characters
+	  do ;; Find character with no parents
+	     (let ((character (find-if (lambda (c) (not (rassoc c edges)))
+				       characters)))
+	       (format t "~a" character)
+	       ;; Remove that character and all edges *from* it
+	       (setf characters (delete character characters))
+	       (setf edges (delete-if (lambda (edge) (eql character (car edge)))
+			  edges))))))
+
+;;; Problem 92
+(defun square (n)
+  "Returns the square of N"
+  (* n n))
+
+(defun square-digits (n)
+  "Returns the sum of the squares of the digits in N"
+  (reduce #'+ (mapcar #'square (digits n))))
+
+(defun square-digit-chains ()
+  (loop for i from 1 below 10000000
+	sum (if (= 89 (loop with n = i
+			    until (or (= 89 n)
+				      (= 1 n))
+			    do (setf n (square-digits n))
+			    finally (return n)))
+		1
+		0)))
+
+;;; Problem 97
+(defun large-non-mersenne-prime ()
+  (loop with n = 28433
+	repeat 7830457
+	do (setf n (mod (* 2 n) 10000000000))
+	finally (return (1+ n))))
+
+;;; Problem 719
+(defun for-each-digit-sum (function n &key (max n))
+  "Runs FUNCTION on the sum of each partitioning of digits in N"
+  (let* ((digits (coerce (digits n) 'vector))
+	 (length (length digits)))
+    (labels ((recurse (index term sum)
+	       (let ((total (+ term sum)))
+		 (unless (> total max)
+		   (cond ((= index length)
+			  (funcall function total))
+			 (t (recurse (1+ index) (+ (* 10 term) (aref digits index)) sum)
+			    (unless (zerop index)
+			      (recurse (1+ index) (aref digits index) (+ sum term)))))))))
+      (recurse 0 0 0))))
+
+(defun s-number-p (n root)
+  "Returns non-NIL if N is an 'S-number' where its square root (ROOT) is the sum of a partition of its digits"
+  (for-each-digit-sum
+   (lambda (sum)
+     (when (= root sum)
+       (return-from s-number-p t)))
+   n
+   :max root)
+  nil)
+
+(defun number-splitting (&optional (max 1000000000000))
+  (loop with sum = 0
+	for n upfrom 2
+	for square = (square n)
+	while (<= square max)
+	do (when (s-number-p square n)
+	     (incf sum square))
+	finally (return sum)))
