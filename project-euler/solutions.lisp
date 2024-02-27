@@ -1239,3 +1239,71 @@
 			(> fraction best))
 	       (setf best fraction))
 	  finally (return (numerator best)))))
+
+;;; Problem 72
+(defun counting-fractions (&optional (max 1000000))
+  (reduce #'+
+	  (subseq (compute-totients max) 2)))
+
+;;; Problem 73
+;; Note: Requires a lot of heap space!
+(defun counting-fractions-in-range (&optional (max 12000))
+  (let ((count 0)
+	(set (make-hash-table)))
+    (reset-progress (* max max))
+    (loop for n from 1 upto max do
+      (loop for d from (1+ n) upto max
+	    for fraction = (/ n d)
+	    do (note-progress)
+	       (when (and (> fraction 1/3)
+			  (< fraction 1/2)
+			  (not (gethash fraction set)))
+		 (setf (gethash fraction set) t)
+		 (incf count))))
+    count))
+
+;;; Problem 74
+(defun sum-factorial-of-digits (n)
+  "Returns the sum of the factorial of each digit in N"
+  (reduce #'+ (mapcar #'factorial (digits n))))
+
+(defun digit-factorial-chains ()
+  ;; Algorithm: just evaluate them all, but memoize to avoid redundant work
+  (let ((chains (make-hash-table)))
+    (labels ((count-chain (n &optional seen)
+	       (or (gethash n chains)
+		   (setf (gethash n chains)
+			 (cond ((member n seen) 0)
+			       (t (1+ (count-chain (sum-factorial-of-digits n)
+						   (cons n seen)))))))))
+      (loop with count = 0
+	    for n from 1 below 1000000
+	    sum (if (= 60 (count-chain n))
+		    1
+		    0)))))
+
+;;; Problem 75
+(defun coprimep (m n)
+  "Returns non-NIL if M and N are coprime"
+  (= 1 (gcd m n)))
+
+;; Algorithm: Calculate primitive Pythagorean triples via Euclid's
+;; formula, and count them along with their multiples
+(defun singular-integer-right-triangles (&optional (max 1500000))
+  (let ((counts (make-array (1+ max) :initial-element 0)))
+    ;; From Euclid's formula
+    (loop for n from 1 upto max do
+      (loop for m from (1+ n) upto (sqrt max) ; sqrt due to m * m on next line
+	    for perimeter = (* 2 m (+ m n))
+	    do ;; Only for primitive triples
+	       (when (and (coprimep m n)
+			  (or (evenp m) (evenp n)))
+		 ;; Count all multiples as well
+		 (loop for p2 from perimeter upto max by perimeter
+		       do (note-progress)
+			  (incf (aref counts p2))))))
+    ;; Find lengths with only a single solution
+    (loop for n from 1 upto max
+	  sum (if (= (aref counts n) 1)
+		  1
+		  0))))
