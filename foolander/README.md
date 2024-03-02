@@ -9,7 +9,7 @@ The game uses HTTP 1.1 chunked transfer encoding, along with an iframe containin
 
 ## Links
 
-* [Play the game](https://foo.schemescape.com/)
+* ~~Play the game~~ (the server has been taken offline, sorry!)
 * [Game jam submission page](https://itch.io/jam/autumn-lisp-game-jam-2023/rate/2333756)
 * [Initial blog post](https://log.schemescape.com/posts/web-development/interactive-browser-app-without-js.html)
 * [Post-mortem blog post](https://log.schemescape.com/posts/web-development/interactive-browser-app-without-js-2.html)
