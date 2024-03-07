@@ -1328,6 +1328,16 @@
 		  1
 		  0))))
 
+;;; Problem 76
+(defun counting-summations (&optional (target 100))
+  ;; TODO: memoize
+  (labels ((recurse (n target)
+	     (cond ((< target 0) 0)
+		   ((= target 0) 1)
+		   (t (loop for m from n downto 1
+			    sum (recurse m (- target m)))))))
+    (recurse (1- target) target)))
+
 ;;; Problem 79
 (defun passcode-derivation ()
   (let ((characters nil)
@@ -1376,37 +1386,3 @@
 	repeat 7830457
 	do (setf n (mod (* 2 n) 10000000000))
 	finally (return (1+ n))))
-
-;;; Problem 719
-(defun for-each-digit-sum (function n &key (max n))
-  "Runs FUNCTION on the sum of each partitioning of digits in N"
-  (let* ((digits (coerce (digits n) 'vector))
-	 (length (length digits)))
-    (labels ((recurse (index term sum)
-	       (let ((total (+ term sum)))
-		 (unless (> total max)
-		   (cond ((= index length)
-			  (funcall function total))
-			 (t (recurse (1+ index) (+ (* 10 term) (aref digits index)) sum)
-			    (unless (zerop index)
-			      (recurse (1+ index) (aref digits index) (+ sum term)))))))))
-      (recurse 0 0 0))))
-
-(defun s-number-p (n root)
-  "Returns non-NIL if N is an 'S-number' where its square root (ROOT) is the sum of a partition of its digits"
-  (for-each-digit-sum
-   (lambda (sum)
-     (when (= root sum)
-       (return-from s-number-p t)))
-   n
-   :max root)
-  nil)
-
-(defun number-splitting (&optional (max 1000000000000))
-  (loop with sum = 0
-	for n upfrom 2
-	for square = (square n)
-	while (<= square max)
-	do (when (s-number-p square n)
-	     (incf sum square))
-	finally (return sum)))
