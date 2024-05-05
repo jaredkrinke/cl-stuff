@@ -360,21 +360,22 @@
 ;;; Problem 39
 (defun max-integer-right-triangles ()
   (let ((solutions (make-hash-table)))
-    (loop for i from 1 upto 1000 do
-      (loop for j from 1 upto 1000 do
-	(loop for k from 1 upto 1000
-	      for perimeter = (+ i j k)
-	      do (when (and (<= perimeter 1000)
-			    (= (+ (* i i) (* j j))
-			       (* k k)))
-		   (incf (gethash (+ i j k) solutions 0))))))
-    (loop with max = 0
-	  with best = nil
-	  for perimeter being the hash-keys in solutions using (hash-value count)
-	  do (when (> count max)
-	       (setf max count)
-	       (setf best perimeter))
-	  finally (return best))))
+    ;; Use Euclid's Formula
+    (loop for m from 1 upto 31 do ; Upper limit determined using algebra
+	  (loop for n from 1 below m
+		do (when (and (or (evenp n) (evenp m))
+			      (= 1 (gcd m n)))
+		     (loop for k upfrom 1
+			   for a = (* k (- (* m m) (* n n)))
+			   for b = (* k 2 m n)
+			   for c = (* k (+ (* m m) (* n n)))
+			   for p = (+ a b c)
+			   while (<= p 1000)
+			   do (incf (gethash p solutions 0))))))
+    (first (first (sort (loop for k being the hash-keys in solutions using (hash-value v)
+			      collect (list k v))
+			#'>
+			:key #'second)))))
 
 ;;; Problem 40
 (defun make-champernowne-digit-generator ()
